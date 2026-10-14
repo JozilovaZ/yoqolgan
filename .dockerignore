@@ -1,0 +1,10 @@
+.env
+*.db
+data/
+.idea/
+.git/
+__pycache__/
+*.pyc
+nginx/
+deploy/
+docker-compose.yml

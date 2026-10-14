@@ -1,0 +1,4 @@
+# Linux serverda skriptlar ishlashi uchun qator oxiri LF bo'lishi shart
+*.sh text eol=lf
+*.template text eol=lf
+Dockerfile text eol=lf

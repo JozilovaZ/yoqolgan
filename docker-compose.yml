@@ -1,0 +1,54 @@
+# Oddiy ishga tushirish (polling, nginx'siz):
+#   docker compose up -d --build
+#
+# Nginx + SSL + webhook bilan (domen kerak, DEPLOY.md ga qarang):
+#   docker compose --profile webhook up -d --build
+
+services:
+  bot:
+    build: .
+    container_name: izla-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - bot-data:/app/data # SQLite bazasi shu yerda — konteyner o'chsa ham saqlanadi
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: izla-nginx
+    profiles: ["webhook"]
+    restart: unless-stopped
+    depends_on:
+      - bot
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-example.com}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    # Har 6 soatda qayta yuklanadi — yangilangan SSL sertifikatni olish uchun
+    command: /bin/sh -c "while :; do sleep 6h; nginx -s reload; done & /docker-entrypoint.sh nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    container_name: izla-certbot
+    profiles: ["webhook"]
+    restart: unless-stopped
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-certs:/etc/letsencrypt
+    # Har 12 soatda sertifikat muddatini tekshiradi va kerak bo'lsa yangilaydi
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  bot-data:
+  certbot-www:
+  certbot-certs:

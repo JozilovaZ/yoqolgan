@@ -1,0 +1,14 @@
+# Maxfiy sozlamalar va ma'lumotlar bazasi — GitHub'ga yuklanmaydi!
+.env
+*.db
+data/
+backups/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# PyCharm
+.idea/
