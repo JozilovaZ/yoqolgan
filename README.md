@@ -18,6 +18,17 @@ Narsasini yo'qotgan odam **"Narsa yo'qotdim"** bo'limida turini tanlaydi va oxir
 
 Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtiradi (`matching.py`). Turi bir xil, viloyati mos (ikkalasida ham ko'rsatilgan bo'lsa) va yo'qotilgan kundan keyin 60 kun ichida topilgan bo'lsa, egasiga **"🙋 Bu meniki"** tugmasi bilan xabar boradi. Qidiruvlarni **"🔔 Qidiruvlarim"** bo'limida ko'rish va to'xtatish mumkin. Narsa egasiga qaytarilsa, qidiruv avtomatik yopiladi.
 
+### Eslatmalar va maxfiylik (`scheduler.py`, har 15 daqiqada)
+
+- Egasi tasdiqlangandan keyin **24 soat** to'lamasa, eslatma oladi. **48 soatda** murojaat yopiladi va narsa boshqalar uchun yana ochiladi.
+- Murojaat yoki chek **3 soat** ko'rib chiqilmasa, admin guruhga umumiy eslatma boradi.
+- Muddati (60 kun) o'tgan "yo'qotdim" qidiruvlari yopiladi va egasiga xabar beriladi.
+- E'lon yopilishi bilan hujjatdan OCR o'qigan matn o'chiriladi. Yopilganiga **90 kun** bo'lgan e'lon va murojaatlardan telefon, karta, isbot va chek o'chiriladi, yopiq qidiruvlar butunlay o'chiriladi.
+
+Muddatlarni `.env` da o'zgartirish mumkin: `PAYMENT_REMIND_HOURS`, `PAYMENT_EXPIRE_HOURS`, `ADMIN_REMIND_HOURS`, `DATA_RETENTION_DAYS`.
+
+> Admin guruhdagi rasmlar Telegram'da saqlanadi, bot ularni o'chira olmaydi. Guruh sozlamalarida **"Xabarlarni avtomatik o'chirish"** ni (masalan, 1 oy) yoqing.
+
 ### Onlayn to'lovni ulash (Click / Payme)
 
 1. Click yoki Payme'da merchant (YaTT/MChJ) sifatida ro'yxatdan o'ting.
@@ -47,7 +58,13 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 | `/start` | bot | Asosiy menyu |
 | `/cancel` | bot | Jarayonni bekor qilish |
 | `/id` | istalgan joyda | Chat ID ni bilish |
-| `/stats` | admin guruh | Statistika |
+| `/help` | admin guruh | Admin panel buyruqlari |
+| `/find` | admin guruh | Qidirish: `T0012` (e'lon), `m15` (murojaat), `Y0003` (qidiruv), telefon, `@username` yoki ID. Kartochkada tugmalar: rasm, kanaldan o'chirish, "qaytarildi" deb yopish, bloklash |
+| `/stats` | admin guruh | Bugun / 7 kun / 30 kun / jami: e'lonlar, qaytarilganlar, tushum; eng ko'p turlar va hududlar |
+| `/payouts` | admin guruh | O'tkazilmagan suyunchilar va "✅ O'tkazildi" tugmalari |
+| `/export` | admin guruh | Bazani Excel (.xlsx) faylga |
+| `/ban`, `/unban` | admin guruh | `/ban @username sabab` — bloklangan foydalanuvchi botdan foydalana olmaydi |
+| `/broadcast` | admin guruh | Guruhdagi xabarga **reply** qilib yozing — barcha foydalanuvchilarga yuboriladi |
 | `/pending` | admin guruh | Kanalga chiqmay qolgan e'lonlar |
 
 ## Fayllar

@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 import database as db
-from config import ADMIN_USERNAME, FINDER_SHARE, SERVICE_FEE
+from config import ADMIN_USERNAME, DATA_RETENTION_DAYS, FINDER_SHARE, SERVICE_FEE
 from keyboards import BTN_CANCEL, BTN_RULES, main_menu
 from utils import money
 
@@ -55,7 +55,10 @@ async def rules(message: Message):
         "o'xshash narsa topilishi bilan bot sizga xabar beradi.\n\n"
         f"💰 Xizmat haqi: <b>{money(SERVICE_FEE)} so'm</b>\n"
         f"🎁 Shundan <b>{FINDER_SHARE}%</b> narsani topgan insonga suyunchi sifatida beriladi.\n\n"
-        "🔐 Pasport va boshqa hujjatlardagi shaxsiy ma'lumotlar kanalda e'lon qilinmaydi."
+        "🔐 <b>Maxfiylik</b>\n"
+        "• Pasport va boshqa hujjatlardagi shaxsiy ma'lumotlar kanalda e'lon qilinmaydi.\n"
+        "• Telefon va karta raqamingizni faqat admin ko'radi, ikkinchi tomonga faqat to'lovdan keyin beriladi.\n"
+        f"• E'lon yopilgach {DATA_RETENTION_DAYS} kun o'tib telefon, karta va hujjat ma'lumotlari bazadan o'chiriladi."
     )
     if ADMIN_USERNAME:
         text += f"\n\n❓ Savollar uchun: {ADMIN_USERNAME}"

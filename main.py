@@ -5,7 +5,8 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 import database as db
 import images
@@ -21,6 +22,21 @@ from config import (
     WEBHOOK_URL,
 )
 from handlers import get_routers
+from middlewares import BanMiddleware
+from scheduler import run_scheduler
+
+
+ADMIN_COMMANDS = [
+    BotCommand(command="help", description="Admin panel: barcha buyruqlar"),
+    BotCommand(command="find", description="Qidirish: T0012, m15, telefon, @username"),
+    BotCommand(command="stats", description="Statistika"),
+    BotCommand(command="payouts", description="O'tkazilmagan suyunchilar"),
+    BotCommand(command="export", description="Bazani Excel faylga"),
+    BotCommand(command="pending", description="Kanalga chiqmagan e'lonlar"),
+    BotCommand(command="ban", description="Bloklash: /ban @username sabab"),
+    BotCommand(command="unban", description="Blokdan chiqarish"),
+    BotCommand(command="broadcast", description="Xabarga reply qilib — barchaga yuborish"),
+]
 
 
 def check_config() -> None:
@@ -71,6 +87,8 @@ async def main() -> None:
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_routers(*get_routers())
+    for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
+        observer.outer_middleware(BanMiddleware())
 
     await bot.set_my_commands(
         [
@@ -78,10 +96,19 @@ async def main() -> None:
             BotCommand(command="cancel", description="Bekor qilish"),
         ]
     )
+    # Admin guruhda "/" bosilganda chiqadigan buyruqlar
+    if ADMIN_GROUP_ID:
+        try:
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=ADMIN_GROUP_ID))
+        except TelegramAPIError as error:
+            logging.warning("Admin guruh buyruqlari o'rnatilmadi: %s", error)
 
     # OCR modelini fonda oldindan yuklab qo'yamiz (birinchi hujjat tez ishlashi uchun)
     preload = asyncio.create_task(asyncio.to_thread(images.get_reader))
     preload.add_done_callback(lambda task: task.exception() and logging.warning("OCR yuklanmadi: %s", task.exception()))
+
+    # Eslatmalar, muddati o'tganlarni yopish, eski shaxsiy ma'lumotlarni tozalash
+    scheduler = asyncio.create_task(run_scheduler(bot))  # noqa: F841 — havola saqlanadi, aks holda GC o'chiradi
 
     if WEBHOOK_URL:
         await run_webhook(bot, dp)

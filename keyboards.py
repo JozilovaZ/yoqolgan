@@ -223,6 +223,59 @@ def claim_undo_kb(claim_id: int):
     return builder.as_markup()
 
 
+def payout_kb(claim_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Suyunchi o'tkazildi", callback_data=f"po:one:{claim_id}")
+    return builder.as_markup()
+
+
+def payouts_list_kb(rows: list[dict]):
+    from utils import item_code
+
+    builder = InlineKeyboardBuilder()
+    for row in rows:
+        builder.button(text=f"✅ #{item_code(row['id'])} o'tkazildi", callback_data=f"po:list:{row['claim_id']}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def item_card_kb(item: dict, confirm_return: bool = False):
+    builder = InlineKeyboardBuilder()
+    if item["photo_id"]:
+        builder.button(text="🖼 Rasmni ko'rish", callback_data=f"fi:photo:{item['id']}")
+    if item["status"] == "published":
+        builder.button(text="🗑 Kanaldan o'chirish", callback_data=f"mod:delete:{item['id']}")
+        if confirm_return:
+            builder.button(text="⚠️ Ha, qaytarildi deb yopish", callback_data=f"fi:ret2:{item['id']}")
+        else:
+            builder.button(text="✅ Qaytarildi deb belgilash", callback_data=f"fi:ret:{item['id']}")
+    elif item["status"] == "pending":
+        builder.button(text="✅ Rasm bilan chiqarish", callback_data=f"mod:photo:{item['id']}")
+        builder.button(text="🌫 Xira rasm bilan", callback_data=f"mod:blur:{item['id']}")
+        builder.button(text="🙈 Rasmsiz chiqarish", callback_data=f"mod:text:{item['id']}")
+        builder.button(text="❌ Rad etish", callback_data=f"mod:reject:{item['id']}")
+    builder.button(text="👤 Topuvchi", callback_data=f"fi:user:{item['finder_id']}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def user_card_kb(user_id: int, banned: bool):
+    builder = InlineKeyboardBuilder()
+    if banned:
+        builder.button(text="✅ Blokdan chiqarish", callback_data=f"ban:off:{user_id}")
+    else:
+        builder.button(text="⛔ Bloklash", callback_data=f"ban:on:{user_id}")
+    return builder.as_markup()
+
+
+def broadcast_kb(message_id: int, count: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"📣 Ha, {count} kishiga yuborish", callback_data=f"bc:go:{message_id}")
+    builder.button(text="❌ Bekor qilish", callback_data="bc:no")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def payment_review_kb(claim_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ To'lov tushdi", callback_data=f"pay:ok:{claim_id}")

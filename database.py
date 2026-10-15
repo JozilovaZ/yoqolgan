@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS claims (
     owner_phone TEXT,
     proof TEXT,
     receipt_photo_id TEXT,
-    -- checking | rejected | awaiting_payment | payment_review | completed
+    -- checking | rejected | awaiting_payment | payment_review | completed | expired
     status TEXT NOT NULL DEFAULT 'checking',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -70,6 +70,13 @@ MIGRATIONS = [
     "ALTER TABLE items ADD COLUMN longitude REAL",
     "ALTER TABLE items ADD COLUMN ocr_text TEXT",
     "ALTER TABLE claims ADD COLUMN payment_charge_id TEXT",
+    "ALTER TABLE items ADD COLUMN closed_at TEXT",
+    "ALTER TABLE claims ADD COLUMN approved_at TEXT",
+    "ALTER TABLE claims ADD COLUMN owner_reminded INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE claims ADD COLUMN admin_reminded INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE claims ADD COLUMN receipt_at TEXT",
+    "ALTER TABLE claims ADD COLUMN payout_at TEXT",
+    "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0",
 ]
 
 
@@ -89,6 +96,14 @@ async def _execute(query: str, params: tuple = ()) -> int:
         cursor = await db.execute(query, params)
         await db.commit()
         return cursor.lastrowid
+
+
+async def _rowcount(query: str, params: tuple = ()) -> int:
+    """UPDATE/DELETE: nechta qator o'zgardi."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(query, params)
+        await db.commit()
+        return cursor.rowcount
 
 
 async def _fetchone(query: str, params: tuple = ()) -> dict | None:
@@ -126,6 +141,29 @@ async def save_user(user_id: int, full_name: str, username: str | None) -> None:
     )
 
 
+async def get_user(user_id: int) -> dict | None:
+    return await _fetchone("SELECT * FROM users WHERE user_id = ?", (user_id,))
+
+
+async def find_user_by_username(username: str) -> dict | None:
+    return await _fetchone("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username.lstrip("@"),))
+
+
+async def set_banned(user_id: int, banned: bool) -> None:
+    await _execute(
+        "INSERT INTO users (user_id, banned) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET banned = excluded.banned",
+        (user_id, int(banned)),
+    )
+
+
+async def is_banned(user_id: int) -> bool:
+    return await _fetchone("SELECT 1 FROM users WHERE user_id = ? AND banned = 1", (user_id,)) is not None
+
+
+async def list_broadcast_users() -> list[int]:
+    return [row["user_id"] for row in await _fetchall("SELECT user_id FROM users WHERE banned = 0")]
+
+
 # ---------- items ----------
 
 async def create_item(data: dict) -> int:
@@ -139,6 +177,26 @@ async def get_item(item_id: int) -> dict | None:
 async def update_item(item_id: int, **fields) -> None:
     clause, params = _set_clause(fields)
     await _execute(f"UPDATE items SET {clause} WHERE id = ?", params + (item_id,))
+
+
+async def close_item(item_id: int, status: str) -> None:
+    """returned | removed | rejected. OCR matni (ism, hujjat raqami) endi kerak emas — darhol o'chiriladi."""
+    await _execute(
+        "UPDATE items SET status = ?, closed_at = CURRENT_TIMESTAMP, ocr_text = NULL WHERE id = ?",
+        (status, item_id),
+    )
+
+
+async def list_user_items(user_id: int, limit: int = 10) -> list[dict]:
+    return await _fetchall("SELECT * FROM items WHERE finder_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
+
+
+async def find_items_by_phone(digits: str, limit: int = 10) -> list[dict]:
+    """digits — raqamning oxirgi 9 ta raqami (+998 bilan ham, usiz ham topiladi)."""
+    return await _fetchall(
+        "SELECT * FROM items WHERE REPLACE(REPLACE(finder_phone, '+', ''), ' ', '') LIKE ? ORDER BY id DESC LIMIT ?",
+        (f"%{digits}", limit),
+    )
 
 
 async def list_pending() -> list[dict]:
@@ -167,10 +225,68 @@ async def update_claim(claim_id: int, **fields) -> None:
     await _execute(f"UPDATE claims SET {clause} WHERE id = ?", params + (claim_id,))
 
 
+async def approve_claim(claim_id: int) -> None:
+    await _execute(
+        "UPDATE claims SET status = 'awaiting_payment', approved_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (claim_id,),
+    )
+
+
+async def list_item_claims(item_id: int) -> list[dict]:
+    return await _fetchall("SELECT * FROM claims WHERE item_id = ? ORDER BY id", (item_id,))
+
+
+async def list_user_claims(user_id: int, limit: int = 10) -> list[dict]:
+    return await _fetchall("SELECT * FROM claims WHERE owner_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
+
+
+async def find_claims_by_phone(digits: str, limit: int = 10) -> list[dict]:
+    return await _fetchall(
+        "SELECT * FROM claims WHERE REPLACE(REPLACE(owner_phone, '+', ''), ' ', '') LIKE ? ORDER BY id DESC LIMIT ?",
+        (f"%{digits}", limit),
+    )
+
+
+async def close_open_claims(item_id: int) -> list[dict]:
+    """E'lon qo'lda yopilganda: hali tugallanmagan murojaatlar rad etiladi. Ular qaytariladi (xabar berish uchun)."""
+    claims = await _fetchall(
+        "SELECT * FROM claims WHERE item_id = ? AND status IN ('checking', 'awaiting_payment', 'payment_review')",
+        (item_id,),
+    )
+    for claim in claims:
+        await update_claim(claim["id"], status="rejected")
+    return claims
+
+
+async def mark_payout(claim_id: int) -> bool:
+    """Suyunchi o'tkazildi. False — allaqachon belgilangan yoki murojaat yakunlanmagan."""
+    changed = await _rowcount(
+        "UPDATE claims SET payout_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'completed' AND payout_at IS NULL",
+        (claim_id,),
+    )
+    return changed > 0
+
+
+async def list_unpaid_payouts() -> list[dict]:
+    """To'lov qilingan, lekin topuvchiga suyunchi hali o'tkazilmagan murojaatlar (e'lon ma'lumotlari bilan)."""
+    return await _fetchall(
+        "SELECT c.id AS claim_id, c.created_at AS claim_created_at, i.* FROM claims c "
+        "JOIN items i ON i.id = c.item_id WHERE c.status = 'completed' AND c.payout_at IS NULL ORDER BY c.id"
+    )
+
+
+async def save_receipt(claim_id: int, photo_id: str) -> None:
+    await _execute(
+        "UPDATE claims SET status = 'payment_review', receipt_photo_id = ?, receipt_at = CURRENT_TIMESTAMP, "
+        "admin_reminded = 0 WHERE id = ?",
+        (photo_id, claim_id),
+    )
+
+
 async def get_open_claim(owner_id: int, item_id: int) -> dict | None:
     return await _fetchone(
         "SELECT * FROM claims WHERE owner_id = ? AND item_id = ? "
-        "AND status NOT IN ('rejected', 'completed') ORDER BY id DESC LIMIT 1",
+        "AND status IN ('checking', 'awaiting_payment', 'payment_review') ORDER BY id DESC LIMIT 1",
         (owner_id, item_id),
     )
 
@@ -218,19 +334,124 @@ async def close_owner_lost_reports(owner_id: int, category: str) -> None:
     )
 
 
+# ---------- fon vazifalari (scheduler.py) ----------
+
+def _ago(hours: float) -> str:
+    """SQLite uchun: datetime('now', '-24 hours')."""
+    return f"-{hours} hours"
+
+
+async def list_unpaid_claims(hours: float, only_not_reminded: bool = False) -> list[dict]:
+    """Tasdiqlanganiga `hours` soat bo'lgan, lekin to'lanmagan murojaatlar."""
+    query = (
+        "SELECT * FROM claims WHERE status = 'awaiting_payment' "
+        "AND COALESCE(approved_at, created_at) <= datetime('now', ?)"
+    )
+    if only_not_reminded:
+        query += " AND owner_reminded = 0"
+    return await _fetchall(query + " ORDER BY id", (_ago(hours),))
+
+
+async def list_stale_claims(hours: float) -> list[dict]:
+    """Admin `hours` soatdan beri ko'rib chiqmagan murojaatlar (isbot yoki to'lov cheki)."""
+    period = _ago(hours)
+    return await _fetchall(
+        "SELECT * FROM claims WHERE admin_reminded = 0 AND ("
+        "(status = 'checking' AND created_at <= datetime('now', ?)) OR "
+        "(status = 'payment_review' AND COALESCE(receipt_at, created_at) <= datetime('now', ?))"
+        ") ORDER BY id",
+        (period, period),
+    )
+
+
+async def list_outdated_lost_reports(days: int) -> list[dict]:
+    return await _fetchall(
+        "SELECT * FROM lost_reports WHERE status = 'active' AND lost_day <= date('now', ?) ORDER BY id",
+        (f"-{days} days",),
+    )
+
+
+async def purge_personal_data(days: int) -> dict:
+    """Yopilganiga `days` kun bo'lgan e'lon va murojaatlardan shaxsiy ma'lumotlarni o'chiradi."""
+    period = (f"-{days} days",)
+    async with aiosqlite.connect(DB_PATH) as db:
+        items = await db.execute(
+            "UPDATE items SET finder_phone = NULL, finder_card = NULL, ocr_text = NULL, photo_id = '' "
+            "WHERE status IN ('returned', 'removed', 'rejected') AND photo_id != '' "
+            "AND COALESCE(closed_at, created_at) <= datetime('now', ?)",
+            period,
+        )
+        claims = await db.execute(
+            "UPDATE claims SET owner_phone = NULL, proof = NULL, receipt_photo_id = NULL "
+            "WHERE status IN ('completed', 'rejected', 'expired') AND proof IS NOT NULL "
+            "AND created_at <= datetime('now', ?)",
+            period,
+        )
+        reports = await db.execute(
+            "DELETE FROM lost_reports WHERE status = 'closed' AND created_at <= datetime('now', ?)", period
+        )
+        await db.commit()
+        return {"items": items.rowcount, "claims": claims.rowcount, "lost_reports": reports.rowcount}
+
+
 # ---------- statistika ----------
 
 async def get_stats() -> dict:
+    """Hozirgi holat."""
     row = await _fetchone(
         """
         SELECT
             (SELECT COUNT(*) FROM users) AS users,
-            (SELECT COUNT(*) FROM items) AS items,
+            (SELECT COUNT(*) FROM users WHERE banned = 1) AS banned,
             (SELECT COUNT(*) FROM items WHERE status = 'pending') AS pending,
             (SELECT COUNT(*) FROM items WHERE status = 'published') AS published,
-            (SELECT COUNT(*) FROM items WHERE status = 'returned') AS returned,
             (SELECT COUNT(*) FROM claims WHERE status IN ('checking', 'payment_review')) AS waiting_claims,
+            (SELECT COUNT(*) FROM claims WHERE status = 'awaiting_payment') AS awaiting_payment,
+            (SELECT COUNT(*) FROM claims WHERE status = 'completed' AND payout_at IS NULL) AS unpaid_payouts,
             (SELECT COUNT(*) FROM lost_reports WHERE status = 'active') AS lost_active
         """
     )
     return row or {}
+
+
+# Davr boshlanishi (mahalliy vaqt bo'yicha, bazadagi UTC ga o'girilgan). None — butun davr
+PERIODS = {
+    "today": "datetime('now', 'localtime', 'start of day', 'utc')",
+    "week": "datetime('now', '-7 days')",
+    "month": "datetime('now', '-30 days')",
+    "all": "'0000-00-00'",
+}
+
+
+async def get_period_stats(period: str) -> dict:
+    since = PERIODS[period]
+    row = await _fetchone(
+        f"""
+        SELECT
+            (SELECT COUNT(*) FROM users WHERE created_at >= {since}) AS users,
+            (SELECT COUNT(*) FROM items WHERE created_at >= {since}) AS items,
+            (SELECT COUNT(*) FROM items WHERE status = 'returned'
+                AND COALESCE(closed_at, created_at) >= {since}) AS returned,
+            (SELECT COUNT(*) FROM claims WHERE created_at >= {since}) AS claims,
+            (SELECT COUNT(*) FROM claims c JOIN items i ON i.id = c.item_id
+                WHERE c.status = 'completed' AND COALESCE(i.closed_at, c.created_at) >= {since}) AS paid,
+            (SELECT COUNT(*) FROM lost_reports WHERE created_at >= {since}) AS lost_reports
+        """
+    )
+    return row or {}
+
+
+async def top_values(column: str, days: int = 30, limit: int = 5) -> list[dict]:
+    """Oxirgi `days` kunda eng ko'p uchragan turlar yoki hududlar."""
+    assert column in ("category", "region")
+    return await _fetchall(
+        f"SELECT {column} AS value, COUNT(*) AS count FROM items "
+        f"WHERE created_at >= datetime('now', ?) AND COALESCE({column}, '') != '' "
+        f"GROUP BY {column} ORDER BY count DESC LIMIT ?",
+        (f"-{days} days", limit),
+    )
+
+
+async def export_table(table: str) -> list[dict]:
+    assert table in ("items", "claims", "lost_reports", "users")
+    return await _fetchall(f"SELECT * FROM {table} ORDER BY 1")

@@ -33,6 +33,7 @@ from keyboards import (
     skip_kb,
 )
 from services import default_mode, post_link, publish_item
+from verify import prepare_document
 from utils import category_label, cut, day_text, is_document, item_code, item_details, location_text, money
 
 logger = logging.getLogger(__name__)
@@ -421,3 +422,6 @@ async def found_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
             "Admin tekshirgandan so'ng kanalga chiqadi. Egasi topilsa, sizga xabar beramiz. Rahmat! 🙏"
         )
     await callback.message.answer(text, reply_markup=main_menu())
+
+    # Hujjatni hozirdan o'qib qo'yamiz — egasi murojaat qilganda tekshiruv bir zumda bo'ladi
+    prepare_document(bot, item)

@@ -14,11 +14,12 @@ from config import (
     CHANNEL_ID,
     CHANNEL_LINK,
     FINDER_SHARE,
+    PAYMENT_EXPIRE_HOURS,
     PAYMENT_PROVIDER_TOKEN,
     SERVICE_FEE,
 )
 from images import blurred_photo
-from keyboards import channel_post_kb, lost_match_kb
+from keyboards import channel_post_kb, lost_match_kb, payout_kb
 from matching import is_match
 from utils import (
     category_label,
@@ -93,13 +94,19 @@ def post_link(message_id: int) -> str:
 
 # ---------- to'lov ----------
 
-async def request_payment(bot: Bot, claim: dict, item: dict) -> None:
-    """Egasi tasdiqlangach to'lov so'raladi: onlayn (Click/Payme) yoki karta + chek."""
+async def request_payment(bot: Bot, claim: dict, item: dict, intro: str = "") -> None:
+    """Egasi tasdiqlangach to'lov so'raladi: onlayn (Click/Payme) yoki karta + chek.
+
+    intro — boshidagi matn (sukut bo'yicha tabrik; eslatmada boshqacha).
+    """
     code = item_code(item["id"])
-    text = (
+    intro = intro or (
         f"🎉 <b>Tabriklaymiz!</b> #{code} — {category_label(item['category'])} sizniki ekanligi tasdiqlandi.\n\n"
-        f"Topuvchi bilan bog'lanish uchun xizmat haqini to'lang: <b>{money(SERVICE_FEE)} so'm</b>\n"
-        f"🎁 Shundan {FINDER_SHARE}% narsangizni topgan insonga suyunchi sifatida beriladi.\n\n"
+    )
+    text = (
+        intro + f"Topuvchi bilan bog'lanish uchun xizmat haqini to'lang: <b>{money(SERVICE_FEE)} so'm</b>\n"
+        f"🎁 Shundan {FINDER_SHARE}% narsangizni topgan insonga suyunchi sifatida beriladi.\n"
+        f"⏳ To'lov uchun {PAYMENT_EXPIRE_HOURS} soat vaqt bor, keyin murojaat yopiladi.\n\n"
     )
     if PAYMENT_PROVIDER_TOKEN:
         try:
@@ -131,6 +138,26 @@ async def request_payment(bot: Bot, claim: dict, item: dict) -> None:
     )
 
 
+async def mark_post_returned(bot: Bot, item: dict) -> None:
+    """Kanaldagi post "✅ EGASIGA QAYTARILDI" ga o'zgaradi, "Bu meniki" tugmasi olib tashlanadi."""
+    returned_text = channel_post_text(item, returned=True)
+    try:
+        if item["publish_mode"] in ("photo", "blur"):
+            await bot.edit_message_caption(
+                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=returned_text, reply_markup=None
+            )
+        else:
+            await bot.edit_message_text(
+                returned_text,
+                chat_id=CHANNEL_ID,
+                message_id=item["channel_msg_id"],
+                reply_markup=None,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+    except TelegramAPIError as error:
+        logger.warning("Kanal posti yangilanmadi: %s", error)
+
+
 async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "") -> None:
     """To'lov tasdiqlangach: ikki tomonga kontakt, kanal posti yangilanadi, adminga suyunchi eslatmasi.
 
@@ -138,7 +165,7 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
     """
     code = item_code(item["id"])
     await db.update_claim(claim["id"], status="completed")
-    await db.update_item(item["id"], status="returned")
+    await db.close_item(item["id"], "returned")
     await db.close_owner_lost_reports(claim["owner_id"], item["category"])
     share = SERVICE_FEE * FINDER_SHARE // 100
 
@@ -169,23 +196,7 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
     finder_text += "\n\nYaxshilik qilganingiz uchun rahmat! 🙏"
     await safe_send(bot, item["finder_id"], finder_text)
 
-    # Kanaldagi postni yangilash
-    returned_text = channel_post_text(item, returned=True)
-    try:
-        if item["publish_mode"] in ("photo", "blur"):
-            await bot.edit_message_caption(
-                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=returned_text, reply_markup=None
-            )
-        else:
-            await bot.edit_message_text(
-                returned_text,
-                chat_id=CHANNEL_ID,
-                message_id=item["channel_msg_id"],
-                reply_markup=None,
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-    except TelegramAPIError as error:
-        logger.warning("Kanal posti yangilanmadi: %s", error)
+    await mark_post_returned(bot, item)
 
     admin_text = ""
     if charge_id:
@@ -199,4 +210,4 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
         f"Kimga: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
         f"Karta: <code>{escape(item['finder_card'] or 'kiritilmagan')}</code>"
     )
-    await safe_send(bot, ADMIN_GROUP_ID, admin_text)
+    await safe_send(bot, ADMIN_GROUP_ID, admin_text, reply_markup=payout_kb(claim["id"]))

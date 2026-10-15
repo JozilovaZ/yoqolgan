@@ -143,7 +143,7 @@ async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: st
 
     approved = verdict is not None and verdict.approved
     if approved:
-        await db.update_claim(claim_id, status="awaiting_payment")
+        await db.approve_claim(claim_id)
         caption = (
             f"🤖 <b>AVTOMATIK TASDIQLANDI</b> | murojaat №{claim_id}\n\n{details}\n\n"
             "Egasidan to'lov so'raldi. Xato bo'lsa, to'lovdan oldin bekor qiling 👇"
@@ -194,7 +194,7 @@ async def got_receipt(message: Message, bot: Bot):
         return
 
     photo_id = message.photo[-1].file_id
-    await db.update_claim(claim["id"], status="payment_review", receipt_photo_id=photo_id)
+    await db.save_receipt(claim["id"], photo_id)
 
     caption = (
         f"💸 <b>TO'LOV CHEKI</b> | murojaat №{claim['id']}\n\n"

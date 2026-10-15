@@ -26,21 +26,6 @@ async def cmd_id(message: Message):
     await message.answer(f"Chat ID: <code>{message.chat.id}</code>\nSizning ID: <code>{message.from_user.id}</code>")
 
 
-@router.message(Command("stats"), F.chat.id == ADMIN_GROUP_ID)
-async def cmd_stats(message: Message):
-    s = await db.get_stats()
-    await message.answer(
-        "📊 <b>Statistika</b>\n\n"
-        f"👥 Foydalanuvchilar: {s['users']}\n"
-        f"📦 Jami e'lonlar: {s['items']}\n"
-        f"⏳ Tekshiruvda: {s['pending']}\n"
-        f"📢 Kanalda: {s['published']}\n"
-        f"✅ Egasiga qaytarilgan: {s['returned']}\n"
-        f"🙋 Kutilayotgan murojaatlar: {s['waiting_claims']}\n"
-        f"🔔 Faol qidiruvlar: {s['lost_active']}"
-    )
-
-
 async def _mark_done(callback: CallbackQuery, note: str):
     """Admin xabariga natijani yozib, tugmalarni olib tashlaydi."""
     who = escape(callback.from_user.full_name)
@@ -80,7 +65,7 @@ async def delete_item(callback: CallbackQuery, bot: Bot):
     except TelegramAPIError as error:
         await callback.answer(f"Kanaldan o'chmadi: {error}", show_alert=True)
         return
-    await db.update_item(item["id"], status="removed")
+    await db.close_item(item["id"], "removed")
     await _mark_done(callback, "🗑 Kanaldan o'chirildi")
     await safe_send(bot, item["finder_id"], f"😔 #{item_code(item['id'])} e'loningiz admin tomonidan olib tashlandi.")
     await callback.answer("O'chirildi")
@@ -97,7 +82,7 @@ async def moderate_item(callback: CallbackQuery, bot: Bot):
     code = item_code(item["id"])
 
     if action == "reject":
-        await db.update_item(item["id"], status="rejected")
+        await db.close_item(item["id"], "rejected")
         await _mark_done(callback, "❌ Rad etildi")
         await safe_send(bot, item["finder_id"], f"😔 #{code} e'loningiz admin tomonidan rad etildi.")
         await callback.answer("Rad etildi")
@@ -162,7 +147,7 @@ async def review_claim(callback: CallbackQuery, bot: Bot):
         await callback.answer("Rad etildi")
         return
 
-    await db.update_claim(claim["id"], status="awaiting_payment")
+    await db.approve_claim(claim["id"])
     await _mark_done(callback, "✅ Egasi tasdiqlandi, to'lov kutilmoqda")
     await request_payment(bot, claim, item)
     await callback.answer("Tasdiqlandi ✅")

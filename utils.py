@@ -1,6 +1,6 @@
 ﻿import logging
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from html import escape
 
 from aiogram import Bot
@@ -23,6 +23,32 @@ def lost_code(report_id: int) -> str:
 
 def day_text(day: date) -> str:
     return f"{day:%d.%m.%Y} ({WEEKDAYS[day.weekday()]})"
+
+
+ITEM_STATUSES = {
+    "pending": "⏳ Tekshiruvda",
+    "published": "📢 Kanalda",
+    "returned": "✅ Egasiga qaytarildi",
+    "removed": "🗑 O'chirilgan",
+    "rejected": "❌ Rad etilgan",
+}
+
+CLAIM_STATUSES = {
+    "checking": "⏳ Egasi tekshirilmoqda",
+    "awaiting_payment": "💳 To'lov kutilmoqda",
+    "payment_review": "🧾 Chek tekshirilmoqda",
+    "completed": "✅ Yakunlangan",
+    "rejected": "❌ Rad etilgan",
+    "expired": "⌛ Muddati o'tgan",
+}
+
+
+def local_time(value: str | None) -> str:
+    """Bazadagi UTC vaqt ("2026-10-15 09:30:00") -> mahalliy "15.10.2026 14:30"."""
+    if not value:
+        return "—"
+    moment = datetime.fromisoformat(value).replace(tzinfo=timezone.utc).astimezone()
+    return f"{moment:%d.%m.%Y %H:%M}"
 
 
 def money(amount: int) -> str:

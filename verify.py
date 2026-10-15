@@ -5,17 +5,27 @@ rasmni o'qiydi va solishtiradi. Ism-familiya HAM raqam mos kelsagina tasdiqlanad
 rasmda xiralashtirilgan, shuning uchun ularni faqat haqiqiy egasi biladi.
 Hech qachon avtomatik rad etilmaydi: mos kelmasa, admin qaror qiladi.
 """
+import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from aiogram import Bot
 
 import database as db
+from config import AUTO_VERIFY_DOCUMENTS
 from images import document_text
+from utils import is_document
 
 logger = logging.getLogger(__name__)
+
+# Egasi natijani ko'pi bilan shuncha kutadi, keyin murojaat adminga o'tadi
+MAX_WAIT_SECONDS = 20
+
+# Hozir o'qilayotgan hujjatlar: item_id -> OCR vazifasi
+_running: dict[int, asyncio.Task] = {}
 
 # Bir harf adashsa ham (OCR yoki imlo xatosi) mos deb hisoblaymiz
 NAME_SIMILARITY = 0.8
@@ -89,18 +99,48 @@ def check(proof: str, lines: list[str]) -> Verdict:
     return Verdict(name_ok, number_ok)
 
 
+async def _read_and_save(bot: Bot, item: dict) -> list[str]:
+    started = time.monotonic()
+    lines = await document_text(bot, item["photo_id"])
+    await db.update_item(item["id"], ocr_text="\n".join(lines))
+    logger.info("Hujjat o'qildi (#%s): %.1f s", item["id"], time.monotonic() - started)
+    return lines
+
+
+def _ocr_task(bot: Bot, item: dict) -> asyncio.Task:
+    """Bitta e'lon uchun OCR faqat bir marta ishlaydi — ikkinchi so'rov o'sha natijani kutadi."""
+    task = _running.get(item["id"])
+    if task is None:
+        task = asyncio.create_task(_read_and_save(bot, item))
+        _running[item["id"]] = task
+        task.add_done_callback(lambda _: _running.pop(item["id"], None))
+    return task
+
+
+def prepare_document(bot: Bot, item: dict) -> None:
+    """E'lon berilishi bilan hujjatni fonda o'qib qo'yadi — egasi murojaat qilganda natija tayyor turadi."""
+    if not AUTO_VERIFY_DOCUMENTS or not is_document(item["category"]) or item.get("ocr_text") is not None:
+        return
+    task = _ocr_task(bot, item)
+    task.add_done_callback(
+        lambda done: done.exception() and logger.warning("Hujjat o'qilmadi (#%s): %s", item["id"], done.exception())
+    )
+
+
 async def verify_document_claim(bot: Bot, item: dict, proof: str) -> Verdict | None:
-    """None — tekshirib bo'lmadi (OCR xatosi), admin qaror qiladi."""
-    try:
-        if item.get("ocr_text") is None:
-            lines = await document_text(bot, item["photo_id"])
-            # Keyingi murojaatlar uchun saqlab qo'yamiz — OCR sekin ishlaydi
-            await db.update_item(item["id"], ocr_text="\n".join(lines))
-        else:
-            lines = item["ocr_text"].split("\n")
-    except Exception as error:
-        logger.warning("Hujjat o'qilmadi (#%s): %s", item["id"], error)
-        return None
+    """None — tekshirib bo'lmadi (OCR xatosi yoki juda uzoq davom etdi), admin qaror qiladi."""
+    if item.get("ocr_text") is not None:
+        lines = item["ocr_text"].split("\n")
+    else:
+        try:
+            # shield: vaqt tugasa ham OCR fonda davom etadi va natija keyingi murojaatlar uchun saqlanadi
+            lines = await asyncio.wait_for(asyncio.shield(_ocr_task(bot, item)), timeout=MAX_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("Hujjat %s s ichida o'qilmadi (#%s) — admin tekshiradi", MAX_WAIT_SECONDS, item["id"])
+            return None
+        except Exception as error:
+            logger.warning("Hujjat o'qilmadi (#%s): %s", item["id"], error)
+            return None
     verdict = check(proof, lines)
     logger.info("Hujjat tekshiruvi #%s: %s", item["id"], verdict)
     return verdict

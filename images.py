@@ -156,10 +156,12 @@ def hide_personal_data(data: bytes, faces_only: bool) -> bytes:
 def read_document_text(data: bytes) -> list[str]:
     """Hujjatdagi yozuvlar (egasini tekshirish uchun). Rasm yuz bo'yicha to'g'rilanadi."""
     image = Image.open(BytesIO(data)).convert("RGB")
-    image.thumbnail((1600, 1600))
-    image, _faces = _upright_with_faces(image)
-    # Yuz topilmasa ham (bank karta va h.k.) har bir yozuv 4 xil burchakda o'qiladi
-    results = get_reader().readtext(np.array(image), rotation_info=[90, 180, 270])
+    image.thumbnail((1280, 1280))
+    image, faces = _upright_with_faces(image)
+    # Yuz topilsa rasm allaqachon to'g'rilangan. Topilmasa (bank karta va h.k.) har bir yozuv
+    # 4 xil burchakda o'qiladi — bu ~2 baravar sekinroq
+    rotation = None if faces else [90, 180, 270]
+    results = get_reader().readtext(np.array(image), rotation_info=rotation)
     return [text for _points, text, _confidence in results]
 
 

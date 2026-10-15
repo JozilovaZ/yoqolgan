@@ -41,6 +41,15 @@ PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
 # true: hujjat egasining javobi OCR bilan tekshiriladi, mos kelsa admin'siz tasdiqlanadi
 AUTO_VERIFY_DOCUMENTS = os.getenv("AUTO_VERIFY_DOCUMENTS", "true").lower() == "true"
 
+# Eslatmalar (soatda): egasi tasdiqlangandan keyin to'lamasa — eslatma, keyin murojaat yopiladi
+PAYMENT_REMIND_HOURS = int(os.getenv("PAYMENT_REMIND_HOURS", "24"))
+PAYMENT_EXPIRE_HOURS = int(os.getenv("PAYMENT_EXPIRE_HOURS", "48"))
+# Murojaat shuncha soat tekshirilmasa — admin guruhga eslatma
+ADMIN_REMIND_HOURS = int(os.getenv("ADMIN_REMIND_HOURS", "3"))
+
+# Yopilgan e'lon va murojaatlardagi shaxsiy ma'lumotlar (telefon, karta, isbot) shuncha kundan keyin o'chiriladi
+DATA_RETENTION_DAYS = int(os.getenv("DATA_RETENTION_DAYS", "90"))
+
 # true: e'lon darhol kanalga chiqadi, admin keyin o'chira oladi
 # false: avval admin tasdiqlaydi
 AUTO_PUBLISH = os.getenv("AUTO_PUBLISH", "true").lower() == "true"
