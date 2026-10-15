@@ -2,12 +2,12 @@ from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import Message
 
 import database as db
-from config import ADMIN_USERNAME, CHANNEL_LINK, FINDER_SHARE, SERVICE_FEE
-from keyboards import BTN_CANCEL, BTN_LOST, BTN_RULES, categories_kb, lost_items_kb, main_menu
-from utils import category_label, money
+from config import ADMIN_USERNAME, FINDER_SHARE, SERVICE_FEE
+from keyboards import BTN_CANCEL, BTN_RULES, main_menu
+from utils import money
 
 from .claim import start_claim
 
@@ -51,6 +51,8 @@ async def rules(message: Message):
         "3️⃣ Egasi kanalda narsasini ko'rib, <b>«Bu meniki»</b> tugmasini bosadi.\n"
         "4️⃣ Egalikni isbotlash uchun narsa haqida savollarga javob beradi.\n"
         "5️⃣ Xizmat haqi to'lanadi va bot ikki tomonni bog'lab beradi.\n\n"
+        "🔔 Narsangiz hali topilmagan bo'lsa, <b>«Narsa yo'qotdim»</b> bo'limida e'lon qoldiring — "
+        "o'xshash narsa topilishi bilan bot sizga xabar beradi.\n\n"
         f"💰 Xizmat haqi: <b>{money(SERVICE_FEE)} so'm</b>\n"
         f"🎁 Shundan <b>{FINDER_SHARE}%</b> narsani topgan insonga suyunchi sifatida beriladi.\n\n"
         "🔐 Pasport va boshqa hujjatlardagi shaxsiy ma'lumotlar kanalda e'lon qilinmaydi."
@@ -58,38 +60,3 @@ async def rules(message: Message):
     if ADMIN_USERNAME:
         text += f"\n\n❓ Savollar uchun: {ADMIN_USERNAME}"
     await message.answer(text)
-
-
-@router.message(StateFilter(None), F.text == BTN_LOST)
-async def lost(message: Message):
-    text = "🔍 <b>Narsangizni yo'qotdingizmi?</b>\n\n"
-    if CHANNEL_LINK:
-        text += f"Barcha topilgan narsalar kanalimizda: {CHANNEL_LINK}\n\n"
-    text += "Yoki quyida turini tanlang — oxirgi topilganlarni ko'rsataman 👇"
-    await message.answer(text, reply_markup=categories_kb("lost"))
-
-
-@router.callback_query(F.data.startswith("lost:"))
-async def lost_category(callback: CallbackQuery):
-    category = callback.data.split(":", 1)[1]
-    items = await db.list_published(category)
-    await callback.answer()
-    if not items:
-        await callback.message.answer(
-            f"{category_label(category)} bo'yicha hozircha e'lon yo'q 😔\n"
-            "Kanalni kuzatib boring — yangi e'lonlar doim chiqib turadi."
-        )
-        return
-    await callback.message.answer(
-        f"{category_label(category)} — oxirgi topilganlar.\n"
-        "Batafsil ko'rish uchun kanalda e'lon raqamini qidiring.\n"
-        "Narsangiz bo'lsa, ustiga bosing 👇",
-        reply_markup=lost_items_kb(items),
-    )
-
-
-@router.callback_query(F.data.startswith("claim:"))
-async def claim_from_list(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.clear()
-    await start_claim(callback.message, state, int(callback.data.split(":")[1]), callback.from_user)

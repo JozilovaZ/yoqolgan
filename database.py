@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS claims (
     status TEXT NOT NULL DEFAULT 'checking',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS lost_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    owner_name TEXT,
+    owner_username TEXT,
+    category TEXT NOT NULL,
+    region TEXT,
+    place TEXT,
+    lost_day TEXT,  -- YYYY-MM-DD
+    description TEXT,
+    -- active | closed
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -89,6 +104,12 @@ async def _fetchall(query: str, params: tuple = ()) -> list[dict]:
             return [dict(row) for row in await cursor.fetchall()]
 
 
+async def _insert(table: str, data: dict) -> int:
+    columns = ", ".join(data)
+    placeholders = ", ".join("?" for _ in data)
+    return await _execute(f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", tuple(data.values()))
+
+
 def _set_clause(fields: dict) -> tuple[str, tuple]:
     return ", ".join(f"{key} = ?" for key in fields), tuple(fields.values())
 
@@ -106,9 +127,7 @@ async def save_user(user_id: int, full_name: str, username: str | None) -> None:
 # ---------- items ----------
 
 async def create_item(data: dict) -> int:
-    columns = ", ".join(data)
-    placeholders = ", ".join("?" for _ in data)
-    return await _execute(f"INSERT INTO items ({columns}) VALUES ({placeholders})", tuple(data.values()))
+    return await _insert("items", data)
 
 
 async def get_item(item_id: int) -> dict | None:
@@ -134,9 +153,7 @@ async def list_published(category: str, limit: int = 10) -> list[dict]:
 # ---------- claims ----------
 
 async def create_claim(data: dict) -> int:
-    columns = ", ".join(data)
-    placeholders = ", ".join("?" for _ in data)
-    return await _execute(f"INSERT INTO claims ({columns}) VALUES ({placeholders})", tuple(data.values()))
+    return await _insert("claims", data)
 
 
 async def get_claim(claim_id: int) -> dict | None:
@@ -163,6 +180,42 @@ async def get_claim_awaiting_payment(owner_id: int) -> dict | None:
     )
 
 
+# ---------- yo'qotilgan narsalar ----------
+
+async def create_lost_report(data: dict) -> int:
+    return await _insert("lost_reports", data)
+
+
+async def get_lost_report(report_id: int) -> dict | None:
+    return await _fetchone("SELECT * FROM lost_reports WHERE id = ?", (report_id,))
+
+
+async def update_lost_report(report_id: int, **fields) -> None:
+    clause, params = _set_clause(fields)
+    await _execute(f"UPDATE lost_reports SET {clause} WHERE id = ?", params + (report_id,))
+
+
+async def list_user_lost_reports(owner_id: int) -> list[dict]:
+    return await _fetchall(
+        "SELECT * FROM lost_reports WHERE owner_id = ? AND status = 'active' ORDER BY id",
+        (owner_id,),
+    )
+
+
+async def list_active_lost_reports(category: str) -> list[dict]:
+    return await _fetchall(
+        "SELECT * FROM lost_reports WHERE category = ? AND status = 'active' ORDER BY id",
+        (category,),
+    )
+
+
+async def close_owner_lost_reports(owner_id: int, category: str) -> None:
+    await _execute(
+        "UPDATE lost_reports SET status = 'closed' WHERE owner_id = ? AND category = ? AND status = 'active'",
+        (owner_id, category),
+    )
+
+
 # ---------- statistika ----------
 
 async def get_stats() -> dict:
@@ -174,7 +227,8 @@ async def get_stats() -> dict:
             (SELECT COUNT(*) FROM items WHERE status = 'pending') AS pending,
             (SELECT COUNT(*) FROM items WHERE status = 'published') AS published,
             (SELECT COUNT(*) FROM items WHERE status = 'returned') AS returned,
-            (SELECT COUNT(*) FROM claims WHERE status IN ('checking', 'payment_review')) AS waiting_claims
+            (SELECT COUNT(*) FROM claims WHERE status IN ('checking', 'payment_review')) AS waiting_claims,
+            (SELECT COUNT(*) FROM lost_reports WHERE status = 'active') AS lost_active
         """
     )
     return row or {}

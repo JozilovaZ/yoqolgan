@@ -36,7 +36,8 @@ async def cmd_stats(message: Message):
         f"⏳ Tekshiruvda: {s['pending']}\n"
         f"📢 Kanalda: {s['published']}\n"
         f"✅ Egasiga qaytarilgan: {s['returned']}\n"
-        f"🙋 Kutilayotgan murojaatlar: {s['waiting_claims']}"
+        f"🙋 Kutilayotgan murojaatlar: {s['waiting_claims']}\n"
+        f"🔔 Faol qidiruvlar: {s['lost_active']}"
     )
 
 
@@ -186,6 +187,7 @@ async def review_payment(callback: CallbackQuery, bot: Bot):
 
     await db.update_claim(claim["id"], status="completed")
     await db.update_item(item["id"], status="returned")
+    await db.close_owner_lost_reports(claim["owner_id"], item["category"])
     share = SERVICE_FEE * FINDER_SHARE // 100
 
     # Egasiga topuvchining kontakti

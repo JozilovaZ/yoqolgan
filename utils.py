@@ -1,5 +1,6 @@
 ﻿import logging
 import re
+from datetime import date
 from html import escape
 
 from aiogram import Bot
@@ -7,12 +8,21 @@ from aiogram.exceptions import TelegramAPIError
 
 from config import CATEGORIES
 from geo import map_link
+from keyboards import WEEKDAYS
 
 logger = logging.getLogger(__name__)
 
 
 def item_code(item_id: int) -> str:
     return f"T{item_id:04d}"
+
+
+def lost_code(report_id: int) -> str:
+    return f"Y{report_id:04d}"
+
+
+def day_text(day: date) -> str:
+    return f"{day:%d.%m.%Y} ({WEEKDAYS[day.weekday()]})"
 
 
 def money(amount: int) -> str:
@@ -86,6 +96,41 @@ def item_details(item: dict) -> str:
             f"💳 {escape(item['finder_card'] or 'kiritilmagan')}",
         ]
     )
+
+
+def lost_report_text(report: dict) -> str:
+    """"Yo'qotdim" e'loni: egasining o'ziga ko'rsatish uchun."""
+    header = f"<b>{category_label(report['category'])}</b>"
+    if report.get("id"):
+        header += f" | #{lost_code(report['id'])}"
+    address = ", ".join(part for part in (report["region"], report["place"]) if part)
+    lines = [
+        header,
+        f"📍 {escape(cut(address, 200) or 'aniq emas')}",
+        f"📅 {day_text(date.fromisoformat(report['lost_day']))}",
+    ]
+    if report["description"]:
+        lines.append(f"📝 {escape(cut(report['description'], 300))}")
+    return "\n".join(lines)
+
+
+def lost_match_text(item: dict, report: dict) -> str:
+    """Yo'qotgan odamga: unga o'xshash narsa topilgani haqida xabar."""
+    lines = [
+        "🔔 <b>Siz qidirayotgan narsaga o'xshash narsa topildi!</b>",
+        "",
+        f"<b>{category_label(item['category'])}</b> | #{item_code(item['id'])}",
+        location_text(item),
+        f"📅 {escape(item['found_date'] or '')}",
+    ]
+    if item["description"]:
+        lines.append(f"📝 {escape(cut(item['description'], 300))}")
+    lines += [
+        "",
+        f"Qidiruvingiz: #{lost_code(report['id'])}",
+        "Narsangiz bo'lsa, <b>«🙋 Bu meniki»</b> tugmasini bosing 👇",
+    ]
+    return "\n".join(lines)
 
 
 async def safe_send(bot: Bot, chat_id: int | str, text: str, **kwargs) -> bool:

@@ -12,6 +12,12 @@ Topilgan narsalarni egasiga qaytarishga yordam beruvchi Telegram bot.
 6. Egasi kartaga pul o'tkazib, **chek skrinshotini** yuboradi.
 7. Admin to'lovni tasdiqlaydi. Bot ikki tomonga bir-birining kontaktini yuboradi, kanaldagi post "✅ EGASIGA QAYTARILDI" ga o'zgaradi. Adminga topuvchiga qancha suyunchi o'tkazish kerakligi haqida eslatma keladi.
 
+### Yo'qotdim e'lonlari
+
+Narsasini yo'qotgan odam **"Narsa yo'qotdim"** bo'limida turini tanlaydi va oxirgi topilganlarni ko'radi. Narsasi ro'yxatda bo'lmasa, **"🔔 Topilsa xabar bering"** tugmasini bosib e'lon qoldiradi: viloyat, taxminiy joy, sana va tavsif. Bu e'lon kanalga chiqmaydi.
+
+Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtiradi (`matching.py`). Turi bir xil, viloyati mos (ikkalasida ham ko'rsatilgan bo'lsa) va yo'qotilgan kundan keyin 60 kun ichida topilgan bo'lsa, egasiga **"🙋 Bu meniki"** tugmasi bilan xabar boradi. Qidiruvlarni **"🔔 Qidiruvlarim"** bo'limida ko'rish va to'xtatish mumkin. Narsa egasiga qaytarilsa, qidiruv avtomatik yopiladi.
+
 ## Sozlash
 
 1. Kutubxonalarni o'rnating: `pip install -r requirements.txt`
@@ -43,15 +49,17 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 - `database.py` – SQLite bazasi
 - `keyboards.py` – tugmalar
 - `utils.py` – post matnlari va yordamchi funksiyalar
-- `services.py` – kanalga e'lon chiqarish
+- `services.py` – kanalga e'lon chiqarish va yo'qotganlarga xabar berish
+- `matching.py` – yo'qotilgan va topilgan narsalarni moslashtirish
 - `geo.py` – lokatsiyadan manzilni aniqlash (OpenStreetMap)
 - `handlers/found.py` – narsa topgan odam uchun bo'lim
 - `handlers/claim.py` – egasi murojaati va to'lov cheki
 - `handlers/admin.py` – admin tugmalari
-- `handlers/start.py` – menyu, qoidalar, qidiruv
+- `handlers/start.py` – menyu, qoidalar
+- `handlers/lost.py` – qidiruv, "yo'qotdim" e'lonlari, qidiruvlarim
 
 ## Rejadagi ishlar
 
 - [ ] Instagramga avtomatik joylash (Meta Graph API)
 - [ ] Payme/Click orqali avtomatik to'lov
-- [ ] "Yo'qotdim" e'lonlari va topilgan narsalar bilan avtomatik moslashtirish
+- [x] "Yo'qotdim" e'lonlari va topilgan narsalar bilan avtomatik moslashtirish

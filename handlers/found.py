@@ -19,7 +19,6 @@ from keyboards import (
     BTN_FOUND,
     BTN_MANUAL_ADDRESS,
     BTN_SKIP,
-    WEEKDAYS,
     cancel_kb,
     categories_kb,
     confirm_found_kb,
@@ -34,7 +33,7 @@ from keyboards import (
     skip_kb,
 )
 from services import default_mode, post_link, publish_item
-from utils import category_label, cut, is_document, item_code, item_details, location_text, money
+from utils import category_label, cut, day_text, is_document, item_code, item_details, location_text, money
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +224,7 @@ async def got_date(callback: CallbackQuery, state: FSMContext):
     if day > date.today():
         await callback.answer("Kelajakdagi kunni tanlab bo'lmaydi", show_alert=True)
         return
-    value = f"{day:%d.%m.%Y} ({WEEKDAYS[day.weekday()]})"
+    value = day_text(day)
     await state.update_data(found_date=value, found_day=day.isoformat())
     await state.set_state(FoundForm.found_time)
     await callback.answer()

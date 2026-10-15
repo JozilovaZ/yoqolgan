@@ -8,6 +8,7 @@ from config import CATEGORIES, REGIONS
 
 BTN_FOUND = "📦 Narsa topdim"
 BTN_LOST = "🔍 Narsa yo'qotdim"
+BTN_MY_SEARCHES = "🔔 Qidiruvlarim"
 BTN_RULES = "ℹ️ Qoidalar"
 BTN_CANCEL = "❌ Bekor qilish"
 BTN_SKIP = "⏭ O'tkazib yuborish"
@@ -25,7 +26,7 @@ def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_FOUND), KeyboardButton(text=BTN_LOST)],
-            [KeyboardButton(text=BTN_RULES)],
+            [KeyboardButton(text=BTN_MY_SEARCHES), KeyboardButton(text=BTN_RULES)],
         ],
         resize_keyboard=True,
     )
@@ -46,11 +47,13 @@ def location_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def regions_kb():
+def regions_kb(allow_unknown: bool = False):
     builder = InlineKeyboardBuilder()
     for index, region in enumerate(REGIONS):
         builder.button(text=region, callback_data=f"reg:{index}")
     builder.adjust(2)
+    if allow_unknown:
+        builder.row(InlineKeyboardButton(text="🤷 Aniq bilmayman", callback_data="reg:any"))
     return builder.as_markup()
 
 
@@ -146,7 +149,7 @@ def channel_post_kb(bot_username: str, item_id: int):
     return builder.as_markup()
 
 
-def lost_items_kb(items: list[dict]):
+def lost_items_kb(items: list[dict], subscribe_category: str | None = None):
     from utils import item_code
 
     builder = InlineKeyboardBuilder()
@@ -155,6 +158,35 @@ def lost_items_kb(items: list[dict]):
             text=f"🙋 #{item_code(item['id'])} — {item['region']}, {item['found_date']}",
             callback_data=f"claim:{item['id']}",
         )
+    if subscribe_category:
+        builder.button(text="🔔 Topilsa xabar bering", callback_data=f"lostsub:{subscribe_category}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def confirm_lost_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Saqlash", callback_data="lostform:save")
+    builder.button(text="❌ Bekor qilish", callback_data="lostform:cancel")
+    return builder.as_markup()
+
+
+def lost_match_kb(item_id: int, report_id: int, post_url: str = ""):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🙋 Bu meniki", callback_data=f"claim:{item_id}")
+    if post_url:
+        builder.button(text="👀 Kanalda ko'rish", url=post_url)
+    builder.button(text="🔕 Qidiruvni to'xtatish", callback_data=f"lostclose:{report_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def my_searches_kb(reports: list[dict]):
+    from utils import lost_code
+
+    builder = InlineKeyboardBuilder()
+    for report in reports:
+        builder.button(text=f"🔕 #{lost_code(report['id'])} — to'xtatish", callback_data=f"lostclose:{report['id']}")
     builder.adjust(1)
     return builder.as_markup()
 
