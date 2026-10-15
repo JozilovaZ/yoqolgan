@@ -10,10 +10,9 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 import database as db
 from config import CATEGORIES, CHANNEL_LINK, REGIONS
+from i18n import region_label, t
 from keyboards import (
-    BTN_LOST,
-    BTN_MY_SEARCHES,
-    BTN_SKIP,
+    BUTTONS,
     calendar_kb,
     cancel_kb,
     categories_kb,
@@ -45,171 +44,143 @@ class LostForm(StatesGroup):
     confirm = State()
 
 
-@router.message(StateFilter(None), F.text == BTN_LOST)
-async def lost(message: Message):
-    text = "🔍 <b>Narsangizni yo'qotdingizmi?</b>\n\n"
+@router.message(StateFilter(None), F.text.in_(BUTTONS["lost"]))
+async def lost(message: Message, lang: str):
+    text = t("lost.intro", lang)
     if CHANNEL_LINK:
-        text += f"Barcha topilgan narsalar kanalimizda: {CHANNEL_LINK}\n\n"
-    text += (
-        "Quyida turini tanlang — oxirgi topilganlarni ko'rsataman. "
-        "Topilmagan bo'lsa, e'lon qoldirasiz va o'xshash narsa topilishi bilan sizga xabar beraman 👇"
-    )
-    await message.answer(text, reply_markup=categories_kb("lost"))
+        text += t("lost.channel", lang, link=CHANNEL_LINK)
+    text += t("lost.choose", lang)
+    await message.answer(text, reply_markup=categories_kb("lost", lang))
 
 
 @router.callback_query(F.data.startswith("lost:"))
-async def lost_category(callback: CallbackQuery):
+async def lost_category(callback: CallbackQuery, lang: str):
     category = callback.data.split(":", 1)[1]
     if category not in CATEGORIES:
         await callback.answer()
         return
     items = await db.list_published(category)
     await callback.answer()
-    if items:
-        text = (
-            f"{category_label(category)} — oxirgi topilganlar.\n"
-            "Batafsil ko'rish uchun kanalda e'lon raqamini qidiring.\n"
-            "Narsangiz bo'lsa, ustiga bosing 👇\n\n"
-            "Ro'yxatda yo'qmi? <b>«🔔 Topilsa xabar bering»</b> tugmasini bosing."
-        )
-    else:
-        text = (
-            f"{category_label(category)} bo'yicha hozircha e'lon yo'q 😔\n\n"
-            "<b>«🔔 Topilsa xabar bering»</b> tugmasini bosing — o'xshash narsa topilishi bilan sizga darhol yozaman."
-        )
-    await callback.message.answer(text, reply_markup=lost_items_kb(items, subscribe_category=category))
+    text = t("lost.list" if items else "lost.empty", lang, category=category_label(category, lang))
+    await callback.message.answer(text, reply_markup=lost_items_kb(items, subscribe_category=category, lang=lang))
 
 
 @router.callback_query(F.data.startswith("claim:"))
-async def claim_from_list(callback: CallbackQuery, state: FSMContext):
+async def claim_from_list(callback: CallbackQuery, state: FSMContext, lang: str):
     await callback.answer()
     await state.clear()
-    await start_claim(callback.message, state, int(callback.data.split(":")[1]), callback.from_user)
+    await start_claim(callback.message, state, int(callback.data.split(":")[1]), callback.from_user, lang)
 
 
 # ---------- "Topilsa xabar bering" e'loni ----------
 
 @router.callback_query(F.data.startswith("lostsub:"))
-async def start_lost_report(callback: CallbackQuery, state: FSMContext):
+async def start_lost_report(callback: CallbackQuery, state: FSMContext, lang: str):
     category = callback.data.split(":", 1)[1]
     await callback.answer()
     if category not in CATEGORIES:
         return
-    await begin_lost_report(callback.message, state, callback.from_user.id, category)
+    await begin_lost_report(callback.message, state, callback.from_user.id, category, lang)
 
 
-async def begin_lost_report(message: Message, state: FSMContext, user_id: int, category: str):
+async def begin_lost_report(message: Message, state: FSMContext, user_id: int, category: str, lang: str):
     """"Topilsa xabar bering" tugmasidan yoki ofertaga rozilikdan keyin chaqiriladi."""
     if len(await db.list_user_lost_reports(user_id)) >= MAX_ACTIVE_SEARCHES:
         await message.answer(
-            f"Sizda allaqachon {MAX_ACTIVE_SEARCHES} ta faol qidiruv bor.\n"
-            f"Keraksizlarini <b>«{BTN_MY_SEARCHES}»</b> bo'limida to'xtatib, keyin yangisini qo'shing."
+            t("lost.max_searches", lang, max=MAX_ACTIVE_SEARCHES, button=t("btn.my_searches", lang))
         )
         return
-    if not await require_terms(message, user_id, f"lostsub_{category}"):
+    if not await require_terms(message, user_id, f"lostsub_{category}", lang):
         return
 
     await state.clear()
     await state.update_data(category=category)
     await state.set_state(LostForm.region)
     await message.answer(
-        f"🔔 <b>{category_label(category)}</b> uchun e'lon qoldiramiz.\n"
-        "🔒 U kanalga chiqmaydi — faqat mos narsa topilganda sizga xabar berish uchun kerak.",
-        reply_markup=cancel_kb(),
+        t("lost.report_intro", lang, category=category_label(category, lang)), reply_markup=cancel_kb(lang)
     )
-    await message.answer("1/4. 🗺 <b>Qaysi viloyatda yo'qotdingiz?</b>", reply_markup=regions_kb(allow_unknown=True))
+    await message.answer(t("lost.q_region", lang), reply_markup=regions_kb(allow_unknown=True, lang=lang))
 
 
 @router.callback_query(LostForm.region, F.data.startswith("reg:"))
-async def got_region(callback: CallbackQuery, state: FSMContext):
+async def got_region(callback: CallbackQuery, state: FSMContext, lang: str):
     value = callback.data.split(":")[1]
     region = "" if value == "any" else REGIONS[int(value)]
     await state.update_data(region=region)
     await state.set_state(LostForm.place)
     await callback.answer()
-    await callback.message.edit_text(f"1/4. 🗺 Viloyat: <b>{region or 'aniq bilmayman'}</b>")
-    await callback.message.answer(
-        "2/4. 📍 <b>Taxminan qayerda yo'qotdingiz?</b> (ixtiyoriy)\n"
-        "<i>Masalan: Chilonzor tumani, 45-avtobusda, «Novza» metrosi atrofida</i>",
-        reply_markup=skip_kb(),
-    )
+    shown = region_label(region, lang) or t("lost.region_unknown", lang)
+    await callback.message.edit_text(t("lost.region_chosen", lang, region=shown))
+    await callback.message.answer(t("lost.q_place", lang), reply_markup=skip_kb(lang))
 
 
 @router.message(LostForm.region)
-async def region_required(message: Message):
-    await message.answer("Iltimos, yuqoridagi ro'yxatdan <b>viloyatni tanlang</b> 👆")
+async def region_required(message: Message, lang: str):
+    await message.answer(t("common.region_required", lang))
 
 
 @router.message(LostForm.place, F.text)
-async def got_place(message: Message, state: FSMContext):
-    place = "" if message.text == BTN_SKIP else message.text.strip()
+async def got_place(message: Message, state: FSMContext, lang: str):
+    place = "" if message.text in BUTTONS["skip"] else message.text.strip()
     if len(place) > 200:
-        await message.answer("Juda uzun. Iltimos, qisqaroq yozing (200 belgigacha).")
+        await message.answer(t("common.too_long", lang, limit=200))
         return
     await state.update_data(place=place)
     await state.set_state(LostForm.lost_date)
-    await message.answer("👌", reply_markup=cancel_kb())
-    await message.answer(
-        "3/4. 📅 <b>Qaysi kuni yo'qotdingiz?</b> Taxminiy kunni tanlang:\n"
-        "<i>◀️ tugmasi bilan oldingi oylarga o'tish mumkin</i>",
-        reply_markup=calendar_kb(),
-    )
+    await message.answer("👌", reply_markup=cancel_kb(lang))
+    await message.answer(t("lost.q_date", lang), reply_markup=calendar_kb(lang=lang))
 
 
 @router.callback_query(LostForm.lost_date, F.data.startswith("cal:nav:"))
-async def calendar_navigate(callback: CallbackQuery):
+async def calendar_navigate(callback: CallbackQuery, lang: str):
     year, month = map(int, callback.data.split(":")[2].split("-"))
     await callback.answer()
-    await callback.message.edit_reply_markup(reply_markup=calendar_kb(year, month))
+    await callback.message.edit_reply_markup(reply_markup=calendar_kb(year, month, lang))
 
 
 @router.callback_query(LostForm.lost_date, F.data.startswith("day:"))
-async def got_date(callback: CallbackQuery, state: FSMContext):
+async def got_date(callback: CallbackQuery, state: FSMContext, lang: str):
     day = date.fromisoformat(callback.data.split(":", 1)[1])
     if day > date.today():
-        await callback.answer("Kelajakdagi kunni tanlab bo'lmaydi", show_alert=True)
+        await callback.answer(t("common.future_day", lang), show_alert=True)
         return
     await state.update_data(lost_day=day.isoformat())
     await state.set_state(LostForm.description)
     await callback.answer()
-    await callback.message.edit_text(f"3/4. 📅 Sana: <b>{day_text(day)}</b>")
-    await callback.message.answer(
-        "4/4. 📝 <b>Narsangizni qisqacha tasvirlang</b> (ixtiyoriy)\n"
-        "<i>Rangi, markasi, o'ziga xos belgilari. Bu matn hech qayerda e'lon qilinmaydi.</i>",
-        reply_markup=skip_kb(),
-    )
+    await callback.message.edit_text(t("lost.date_chosen", lang, date=day_text(day, lang)))
+    await callback.message.answer(t("lost.q_description", lang), reply_markup=skip_kb(lang))
 
 
 @router.message(LostForm.lost_date)
-async def date_required(message: Message):
-    await message.answer("Iltimos, yuqoridagi <b>kalendardan</b> kunni tanlang 👆")
+async def date_required(message: Message, lang: str):
+    await message.answer(t("common.date_required", lang))
 
 
 @router.message(LostForm.description, F.text)
-async def got_description(message: Message, state: FSMContext):
-    description = "" if message.text == BTN_SKIP else message.text.strip()
+async def got_description(message: Message, state: FSMContext, lang: str):
+    description = "" if message.text in BUTTONS["skip"] else message.text.strip()
     if len(description) > 500:
-        await message.answer("Juda uzun. Iltimos, 500 belgigacha yozing.")
+        await message.answer(t("common.too_long_500", lang))
         return
     await state.update_data(description=description)
     await state.set_state(LostForm.confirm)
     data = await state.get_data()
-    await message.answer("Deyarli tayyor ✅", reply_markup=ReplyKeyboardRemove())
+    await message.answer(t("common.almost_ready", lang), reply_markup=ReplyKeyboardRemove())
     await message.answer(
-        "📋 <b>E'loningizni tekshiring:</b>\n\n" + lost_report_text(data), reply_markup=confirm_lost_kb()
+        t("common.check_header", lang) + lost_report_text(data, lang), reply_markup=confirm_lost_kb(lang)
     )
 
 
 @router.callback_query(LostForm.confirm, F.data == "lostform:cancel")
-async def lost_cancel(callback: CallbackQuery, state: FSMContext):
+async def lost_cancel(callback: CallbackQuery, state: FSMContext, lang: str):
     await state.clear()
-    await callback.answer("Bekor qilindi")
+    await callback.answer(t("common.cancelled_toast", lang))
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("E'lon bekor qilindi. Asosiy menyu 👇", reply_markup=main_menu())
+    await callback.message.answer(t("common.post_cancelled", lang), reply_markup=main_menu(lang))
 
 
 @router.callback_query(LostForm.confirm, F.data == "lostform:save")
-async def lost_save(callback: CallbackQuery, state: FSMContext):
+async def lost_save(callback: CallbackQuery, state: FSMContext, lang: str):
     data = await state.get_data()
     await state.clear()
     await callback.answer()
@@ -231,44 +202,37 @@ async def lost_save(callback: CallbackQuery, state: FSMContext):
     report = await db.get_lost_report(report_id)
 
     await callback.message.answer(
-        f"✅ E'loningiz saqlandi: <b>#{lost_code(report_id)}</b>\n\n"
-        "🔔 O'xshash narsa topilishi bilan sizga darhol xabar beraman.\n"
-        f"Qidiruvni <b>«{BTN_MY_SEARCHES}»</b> bo'limida to'xtatishingiz mumkin.",
-        reply_markup=main_menu(),
+        t("lost.saved", lang, code=lost_code(report_id), button=t("btn.my_searches", lang)),
+        reply_markup=main_menu(lang),
     )
 
     # Kanalda allaqachon turgan mos e'lonlar
     matches = [item for item in await db.list_published(report["category"], limit=50) if is_match(report, item)]
     if matches:
         await callback.message.answer(
-            f"👀 Hozirning o'zida <b>{len(matches)}</b> ta o'xshash e'lon bor. Narsangiz bo'lsa, ustiga bosing 👇",
-            reply_markup=lost_items_kb(matches[:10]),
+            t("lost.matches_now", lang, count=len(matches)), reply_markup=lost_items_kb(matches[:10], lang=lang)
         )
 
 
 # ---------- Qidiruvlarim ----------
 
-@router.message(StateFilter(None), F.text == BTN_MY_SEARCHES)
-async def my_searches(message: Message):
+@router.message(StateFilter(None), F.text.in_(BUTTONS["my_searches"]))
+async def my_searches(message: Message, lang: str):
     reports = await db.list_user_lost_reports(message.from_user.id)
     if not reports:
-        await message.answer(
-            "Sizda faol qidiruv yo'q.\n\n"
-            f"Biror narsangiz yo'qolgan bo'lsa, <b>«{BTN_LOST}»</b> bo'limida e'lon qoldiring — "
-            "o'xshash narsa topilishi bilan sizga xabar beraman 🔔"
-        )
+        await message.answer(t("lost.no_searches", lang, button=t("btn.lost", lang)))
         return
-    text = "🔔 <b>Faol qidiruvlaringiz:</b>\n\n" + "\n\n".join(lost_report_text(report) for report in reports)
-    text += "\n\nNarsangiz topilgan bo'lsa, qidiruvni to'xtating 👇"
-    await message.answer(text, reply_markup=my_searches_kb(reports))
+    text = t("lost.my_searches", lang) + "\n\n".join(lost_report_text(report, lang) for report in reports)
+    text += t("lost.my_searches_footer", lang)
+    await message.answer(text, reply_markup=my_searches_kb(reports, lang))
 
 
 @router.callback_query(F.data.startswith("lostclose:"))
-async def close_search(callback: CallbackQuery):
+async def close_search(callback: CallbackQuery, lang: str):
     report = await db.get_lost_report(int(callback.data.split(":")[1]))
     if not report or report["owner_id"] != callback.from_user.id or report["status"] != "active":
-        await callback.answer("Bu qidiruv allaqachon to'xtatilgan", show_alert=True)
+        await callback.answer(t("lost.already_stopped", lang), show_alert=True)
         return
     await db.update_lost_report(report["id"], status="closed")
-    await callback.answer("Qidiruv to'xtatildi")
-    await callback.message.answer(f"🔕 #{lost_code(report['id'])} qidiruvi to'xtatildi.")
+    await callback.answer(t("lost.stopped_toast", lang))
+    await callback.message.answer(t("lost.stopped", lang, code=lost_code(report["id"])))

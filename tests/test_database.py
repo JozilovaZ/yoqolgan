@@ -67,7 +67,7 @@ async def test_purge_counts_from_closing_day(fresh_db):
     sql(fresh_db, "UPDATE claims SET created_at = datetime('now', '-91 days') WHERE id = ?", claim["id"])
     sql(fresh_db, "UPDATE lost_reports SET created_at = datetime('now', '-91 days') WHERE id = ?", report_id)
     counts = await db.purge_personal_data(90)
-    assert counts == {"items": 1, "claims": 1, "lost_reports": 1}
+    assert counts == {"items": 1, "claims": 1, "lost_reports": 1, "chat_messages": 0}
 
     item, claim = await db.get_item(item["id"]), await db.get_claim(claim["id"])
     assert item["finder_phone"] is None and item["finder_card"] is None and item["photo_id"] == ""

@@ -18,6 +18,27 @@ Narsasini yo'qotgan odam **"Narsa yo'qotdim"** bo'limida turini tanlaydi va oxir
 
 Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtiradi (`matching.py`). Turi bir xil, viloyati mos (ikkalasida ham ko'rsatilgan bo'lsa) va yo'qotilgan kundan keyin 60 kun ichida topilgan bo'lsa, egasiga **"🙋 Bu meniki"** tugmasi bilan xabar boradi. Qidiruvlarni **"🔔 Qidiruvlarim"** bo'limida ko'rish va to'xtatish mumkin. Narsa egasiga qaytarilsa, qidiruv avtomatik yopiladi.
 
+### Mening e'lonlarim (`handlers/mine.py`)
+
+**"📋 Mening e'lonlarim"** bo'limida foydalanuvchi o'zi bergan e'lonlarni va qilgan murojaatlarini holati bilan ko'radi. Raqamni bossa, batafsil karta ochiladi.
+
+- **Topuvchi:** kanaldagi postga havola, nechta murojaat ko'rib chiqilayotgani, suyunchi holati (kutilmoqda / o'tkazilgan). E'lon izohini o'zgartira oladi: kanaldagi post yangilanadi, adminga eski va yangi matn boradi. "🤝 Egasiga o'zim qaytardim" yoki "🗑 E'lonni olib tashlash" bilan e'lonni yopadi (ikki marta bosib tasdiqlanadi). Murojaat ko'rib chiqilayotgan bo'lsa, e'lonni yopib bo'lmaydi.
+- **Egasi:** murojaat holati. To'lov kutilayotgan bo'lsa, to'lov ma'lumotlarini qayta oladi. To'lovdan keyin topuvchi kontakti va "✅ Narsamni oldim" tugmasi ko'rinadi.
+
+### E'lon raqami bo'yicha tez qidiruv (`handlers/lookup.py`)
+
+Foydalanuvchi botga kanaldagi e'lon raqamini yozsa (`T0012`, `#T12`, kirillcha `Т0012` ham bo'ladi) yoki kanal postini botga forward qilsa, bot o'sha e'lonni **"🙋 Bu meniki"** va **"👀 Kanalda ko'rish"** tugmalari bilan ko'rsatadi. Hujjatlarning aniq rasmi ko'rsatilmaydi. O'z e'lonini yozsa, "Mening e'lonlarim" kartasi ochiladi. `Y0003` yozilsa, o'zining qidiruvi ochiladi. Tanilmagan matnga bot javobsiz qolmaydi: qanday foydalanishni tushuntiradi.
+
+### Bot orqali yozishma (`handlers/chat.py`)
+
+To'lovdan keyin egasi va topuvchi **"💬 Bot orqali yozish"** tugmasi bilan bir-biriga yozadi: matn, rasm, ovozli xabar, lokatsiya va boshqalar ikkinchi tomonga yetkaziladi va bazada saqlanadi (nizo bo'lsa admin ko'radi). Yozishma to'lovdan keyin `CHAT_DAYS` (standart 14) kun ochiq turadi.
+
+### Ikki til: o'zbekcha va ruscha (`i18n.py`, `locales/`)
+
+Birinchi `/start` da til Telegram ilovasi tilidan aniqlanadi (`ru` → ruscha, qolgani o'zbekcha) va o'zgartirish taklif qilinadi. Keyin `/lang` yoki menyudagi til tugmasi bilan almashtiriladi, tanlov bazada saqlanadi. Boshqa foydalanuvchiga boradigan xabarlar (to'lov, yozishma, eslatmalar) **qabul qiluvchining** tilida yuboriladi. Admin guruh va kanal postlari o'zbekcha qoladi. Ofertaning ruscha matni — `OFERTA_RU.md`.
+
+Yangi matn qo'shganda kalitni `locales/uz.py` va `locales/ru.py` ikkalasiga ham qo'shing — `test_i18n.py` kalitlar va `{...}` o'rinlari bir xilligini tekshiradi.
+
 ### Narsa qo'lga tekkanini tasdiqlash (`handlers/handover.py`)
 
 To'lovdan so'ng egasi **"✅ Narsamni oldim"**, topuvchi **"✅ Egasiga topshirdim"** tugmasini oladi. **Suyunchi faqat egasi tasdiqlagach** so'raladi (admin guruhga "💸 Suyunchi o'tkazish kerak" xabari va `/payouts`).
@@ -80,6 +101,10 @@ Testlar haqiqiy bot kodini aiogram Dispatcher orqali ishlatadi, lekin Telegram'g
 |---|---|
 | `test_flows.py` | "Yo'qotdim" e'loni, mos narsa chiqqanda xabar, hujjatni avtomatik tasdiqlash, onlayn to'lov |
 | `test_handover.py` | Narsa topshirilishini tasdiqlash, nizolar, suyunchi faqat tasdiqdan keyin |
+| `test_chat.py` | Egasi va topuvchi o'rtasidagi yozishma |
+| `test_i18n.py` | Lug'atlar to'liqligi, ruscha foydalanuvchi yo'li, har tomonga o'z tilida xabar |
+| `test_lookup.py` | E'lon raqami va forward bo'yicha qidiruv, tanilmagan matnga javob |
+| `test_mine.py` | "Mening e'lonlarim": ro'yxat, izohni tahrirlash, e'lonni yopish, murojaat holati |
 | `test_panel.py` | Admin panel: `/find`, ban, `/payouts`, `/export`, `/broadcast` |
 | `test_stats.py` | `/stats` tugmalari, grafik, matn va grafik raqamlari bir xilligi |
 | `test_scheduler.py` | Eslatmalar, muddati o'tganlarni yopish |
@@ -97,6 +122,8 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 |---|---|---|
 | `/start` | bot | Asosiy menyu |
 | `/cancel` | bot | Jarayonni bekor qilish |
+| `/lang` | bot | Tilni o'zgartirish (o'zbekcha / ruscha) |
+| `/oferta` | bot | Foydalanish shartlari |
 | `/id` | istalgan joyda | Chat ID ni bilish |
 | `/help` | admin guruh | Admin panel buyruqlari |
 | `/find` | admin guruh | Qidirish: `T0012` (e'lon), `m15` (murojaat), `Y0003` (qidiruv), telefon, `@username` yoki ID. Kartochkada tugmalar: rasm, kanaldan o'chirish, "qaytarildi" deb yopish, bloklash |
@@ -125,6 +152,10 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 - `handlers/admin.py` – admin tugmalari
 - `handlers/start.py` – menyu, qoidalar
 - `handlers/lost.py` – qidiruv, "yo'qotdim" e'lonlari, qidiruvlarim
+- `handlers/mine.py` – "Mening e'lonlarim"
+- `handlers/lookup.py` – e'lon raqami va forward bo'yicha qidiruv
+- `handlers/chat.py` – egasi va topuvchi o'rtasidagi yozishma
+- `i18n.py`, `locales/uz.py`, `locales/ru.py` – ikki tildagi matnlar
 
 ## Rejadagi ishlar
 

@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 
 import database as db
 from config import ADMIN_GROUP_ID, ADMIN_USERNAME, CHANNEL_ID
+from i18n import t, user_lang
 from keyboards import moderation_kb, published_kb
 from services import complete_claim, post_link, publish_item, request_payment
 from utils import item_code, item_details, safe_send
@@ -67,7 +68,8 @@ async def delete_item(callback: CallbackQuery, bot: Bot):
         return
     await db.close_item(item["id"], "removed")
     await _mark_done(callback, "🗑 Kanaldan o'chirildi")
-    await safe_send(bot, item["finder_id"], f"😔 #{item_code(item['id'])} e'loningiz admin tomonidan olib tashlandi.")
+    lang = await user_lang(item["finder_id"])
+    await safe_send(bot, item["finder_id"], t("adm.removed", lang, code=item_code(item["id"])))
     await callback.answer("O'chirildi")
 
 
@@ -84,7 +86,7 @@ async def moderate_item(callback: CallbackQuery, bot: Bot):
     if action == "reject":
         await db.close_item(item["id"], "rejected")
         await _mark_done(callback, "❌ Rad etildi")
-        await safe_send(bot, item["finder_id"], f"😔 #{code} e'loningiz admin tomonidan rad etildi.")
+        await safe_send(bot, item["finder_id"], t("adm.rejected", await user_lang(item["finder_id"]), code=code))
         await callback.answer("Rad etildi")
         return
 
@@ -98,7 +100,7 @@ async def moderate_item(callback: CallbackQuery, bot: Bot):
     mode_names = {"photo": "rasm bilan", "blur": "xira rasm bilan", "text": "rasmsiz"}
     await _mark_done(callback, f"📢 Kanalga chiqdi ({mode_names.get(action, action)})")
     await callback.message.edit_reply_markup(reply_markup=published_kb(item["id"]))
-    text = f"📢 #{code} e'loningiz kanalga chiqdi! Egasi topilsa, sizga darhol xabar beramiz."
+    text = t("adm.published", await user_lang(item["finder_id"]), code=code)
     if post_link(message_id):
         text += f"\n👉 {post_link(message_id)}"
     await safe_send(bot, item["finder_id"], text)
@@ -116,12 +118,10 @@ async def undo_auto_approval(callback: CallbackQuery, bot: Bot):
         return
     await db.update_claim(claim["id"], status="rejected")
     await _mark_done(callback, "↩️ Avtomatik tasdiq bekor qilindi")
-    text = (
-        f"😔 #{item_code(claim['item_id'])} e'loni bo'yicha murojaatingiz admin tomonidan qayta ko'rib chiqildi "
-        "va tasdiqlanmadi. Iltimos, to'lov qilmang."
-    )
+    lang = await user_lang(claim["owner_id"])
+    text = t("adm.undo", lang, code=item_code(claim["item_id"]))
     if ADMIN_USERNAME:
-        text += f"\nXato deb o'ylasangiz: {ADMIN_USERNAME}"
+        text += "\n" + t("common.if_mistake", lang, admin=ADMIN_USERNAME)
     await safe_send(bot, claim["owner_id"], text)
     await callback.answer("Bekor qilindi")
 
@@ -140,9 +140,10 @@ async def review_claim(callback: CallbackQuery, bot: Bot):
     if action == "no" or item["status"] != "published":
         await db.update_claim(claim["id"], status="rejected")
         await _mark_done(callback, "❌ Rad etildi")
-        text = f"😔 #{code} e'loni bo'yicha murojaatingiz tasdiqlanmadi. Ma'lumotlar mos kelmadi."
+        lang = await user_lang(claim["owner_id"])
+        text = t("adm.claim_rejected", lang, code=code)
         if ADMIN_USERNAME:
-            text += f"\nXato deb o'ylasangiz: {ADMIN_USERNAME}"
+            text += "\n" + t("common.if_mistake", lang, admin=ADMIN_USERNAME)
         await safe_send(bot, claim["owner_id"], text)
         await callback.answer("Rad etildi")
         return
@@ -169,12 +170,10 @@ async def review_payment(callback: CallbackQuery, bot: Bot):
     if action == "no":
         await db.update_claim(claim["id"], status="awaiting_payment", receipt_photo_id=None)
         await _mark_done(callback, "❌ To'lov topilmadi")
-        text = (
-            f"⚠️ #{code} bo'yicha to'lovingiz topilmadi.\n"
-            "Iltimos, to'lovni tekshirib, chekni qaytadan yuboring."
-        )
+        lang = await user_lang(claim["owner_id"])
+        text = t("adm.payment_missing", lang, code=code)
         if ADMIN_USERNAME:
-            text += f"\nSavollar uchun: {ADMIN_USERNAME}"
+            text += "\n" + t("common.questions", lang, admin=ADMIN_USERNAME)
         await safe_send(bot, claim["owner_id"], text)
         await callback.answer("Egasiga xabar berildi")
         return

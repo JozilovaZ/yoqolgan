@@ -56,6 +56,8 @@ HANDOVER_ESCALATE_HOURS = int(os.getenv("HANDOVER_ESCALATE_HOURS", "48"))
 
 # Yopilgan e'lon va murojaatlardagi shaxsiy ma'lumotlar (telefon, karta, isbot) shuncha kundan keyin o'chiriladi
 DATA_RETENTION_DAYS = int(os.getenv("DATA_RETENTION_DAYS", "90"))
+# To'lovdan keyin egasi va topuvchi shuncha kun bot orqali yozisha oladi
+CHAT_DAYS = int(os.getenv("CHAT_DAYS", "14"))
 
 # Baza zaxirasi: har kuni shu soatda (mahalliy vaqt) Telegram'ga fayl bo'lib yuboriladi.
 # Qayerga: bo'sh bo'lsa — admin guruhga; "off" — o'chirilgan

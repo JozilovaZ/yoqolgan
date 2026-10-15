@@ -8,7 +8,8 @@ from aiogram.exceptions import TelegramAPIError
 
 from config import CATEGORIES
 from geo import map_link
-from keyboards import WEEKDAYS
+import i18n
+from i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,8 @@ def lost_code(report_id: int) -> str:
     return f"Y{report_id:04d}"
 
 
-def day_text(day: date) -> str:
-    return f"{day:%d.%m.%Y} ({WEEKDAYS[day.weekday()]})"
+def day_text(day: date, lang: str = "uz") -> str:
+    return f"{day:%d.%m.%Y} ({i18n.weekdays(lang)[day.weekday()]})"
 
 
 ITEM_STATUSES = {
@@ -68,8 +69,8 @@ def cut(text: str | None, limit: int = 300) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def category_label(key: str) -> str:
-    return CATEGORIES.get(key, CATEGORIES["other"])[0]
+def category_label(key: str, lang: str = "uz") -> str:
+    return i18n.category_label(key, lang)
 
 
 def is_document(key: str) -> bool:
@@ -83,12 +84,12 @@ def user_link(user_id: int, name: str | None, username: str | None) -> str:
     return link
 
 
-def location_text(item: dict, limit: int = 250) -> str:
+def location_text(item: dict, limit: int = 250, lang: str = "uz") -> str:
     """📍 manzil + xaritaga havola (lokatsiya bo'lsa)."""
-    address = ", ".join(part for part in (item["region"], item["place"]) if part)
-    text = f"📍 {escape(cut(address, limit) or 'Xaritada belgilangan')}"
+    address = ", ".join(part for part in (i18n.region_label(item["region"], lang), item["place"]) if part)
+    text = f"📍 {escape(cut(address, limit) or t('loc.map_marked', lang))}"
     if item.get("latitude") is not None:
-        text += f'\n🗺 <a href="{map_link(item["latitude"], item["longitude"])}">Xaritada ko\'rish</a>'
+        text += f'\n🗺 <a href="{map_link(item["latitude"], item["longitude"])}">{t("loc.on_map", lang)}</a>'
     return text
 
 
@@ -132,39 +133,40 @@ def item_details(item: dict) -> str:
     )
 
 
-def lost_report_text(report: dict) -> str:
+def lost_report_text(report: dict, lang: str = "uz") -> str:
     """"Yo'qotdim" e'loni: egasining o'ziga ko'rsatish uchun."""
-    header = f"<b>{category_label(report['category'])}</b>"
+    header = f"<b>{category_label(report['category'], lang)}</b>"
     if report.get("id"):
         header += f" | #{lost_code(report['id'])}"
-    address = ", ".join(part for part in (report["region"], report["place"]) if part)
+    address = ", ".join(part for part in (i18n.region_label(report["region"], lang), report["place"]) if part)
     lines = [
         header,
-        f"📍 {escape(cut(address, 200) or 'aniq emas')}",
-        f"📅 {day_text(date.fromisoformat(report['lost_day']))}",
+        f"📍 {escape(cut(address, 200) or t('loc.unknown', lang))}",
+        f"📅 {day_text(date.fromisoformat(report['lost_day']), lang)}",
     ]
     if report["description"]:
         lines.append(f"📝 {escape(cut(report['description'], 300))}")
     return "\n".join(lines)
 
 
-def lost_match_text(item: dict, report: dict) -> str:
+def lost_match_text(item: dict, report: dict, lang: str = "uz") -> str:
     """Yo'qotgan odamga: unga o'xshash narsa topilgani haqida xabar."""
     lines = [
-        "🔔 <b>Siz qidirayotgan narsaga o'xshash narsa topildi!</b>",
+        t("match.title", lang),
         "",
-        f"<b>{category_label(item['category'])}</b> | #{item_code(item['id'])}",
-        location_text(item),
+        f"<b>{category_label(item['category'], lang)}</b> | #{item_code(item['id'])}",
+        location_text(item, lang=lang),
         f"📅 {escape(item['found_date'] or '')}",
     ]
     if item["description"]:
         lines.append(f"📝 {escape(cut(item['description'], 300))}")
-    lines += [
-        "",
-        f"Qidiruvingiz: #{lost_code(report['id'])}",
-        "Narsangiz bo'lsa, <b>«🙋 Bu meniki»</b> tugmasini bosing 👇",
-    ]
+    lines += ["", t("match.footer", lang, code=lost_code(report["id"]))]
     return "\n".join(lines)
+
+
+def money_text(amount: int, lang: str = "uz") -> str:
+    """"50 000 so'm" / "50 000 сум"."""
+    return f"{money(amount)} {t('sum', lang)}"
 
 
 async def safe_send(bot: Bot, chat_id: int | str, text: str, **kwargs) -> bool:

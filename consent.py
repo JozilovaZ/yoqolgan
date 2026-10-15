@@ -16,27 +16,23 @@ from config import (
     PAYMENT_EXPIRE_HOURS,
     SERVICE_FEE,
 )
+from i18n import t
 from keyboards import terms_kb
 from utils import money
 
 OFFER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "OFERTA.md")
 TELEGRAM_LIMIT = 4000  # xabar chegarasi 4096, zaxira bilan
 
-SUMMARY = (
-    "📜 <b>Davom etishdan oldin — foydalanish shartlari</b>\n\n"
-    f"• E'lon berish va murojaat qilish bepul. Xizmat haqi (<b>{money(SERVICE_FEE)} so'm</b>) faqat egasi "
-    "tasdiqlangandan keyin to'lanadi.\n"
-    f"• Shundan <b>{FINDER_SHARE}%</b> topuvchiga suyunchi — egasi narsani olganini tasdiqlagach.\n"
-    "• Narsa topuvchi aybi bilan topshirilmasa — pul qaytariladi.\n"
-    "• Telefon va karta raqamingizni faqat admin ko'radi, ikkinchi tomonga faqat to'lovdan keyin beriladi.\n"
-    f"• E'lon yopilgach {DATA_RETENTION_DAYS} kun o'tib shaxsiy ma'lumotlaringiz o'chiriladi.\n"
-    "• Yolg'on ma'lumot va firibgarlik — bloklash.\n\n"
-    "To'liq matn — <b>«📄 Oferta matni»</b>. Davom etish uchun <b>«✅ Roziman»</b> ni bosing."
-)
+# Ruscha tarjima. "Tahrir:" sanasi OFERTA.md dagidan olinadi — matnni o'zgartirsangiz, ikkalasini ham yangilang
+OFFER_PATHS = {"uz": OFFER_PATH, "ru": OFFER_PATH.replace("OFERTA.md", "OFERTA_RU.md")}
 
 
-def _read() -> str:
-    with open(OFFER_PATH, encoding="utf-8") as file:
+def summary(lang: str = "uz") -> str:
+    return t("terms.summary", lang, fee=money(SERVICE_FEE), share=FINDER_SHARE, days=DATA_RETENTION_DAYS)
+
+
+def _read(lang: str = "uz") -> str:
+    with open(OFFER_PATHS.get(lang, OFFER_PATH), encoding="utf-8") as file:
         return file.read()
 
 
@@ -49,20 +45,20 @@ def offer_version() -> str:
 OFFER_VERSION = offer_version()
 
 
-def offer_pages() -> list[str]:
+def offer_pages(lang: str = "uz") -> list[str]:
     """Oferta matni Telegram HTML ko'rinishida, 4096 belgidan oshmaydigan bo'laklarga bo'lingan."""
-    text = _read().format(
+    text = _read(lang).format(
         fee=money(SERVICE_FEE),
         share_percent=FINDER_SHARE,
         share_amount=money(SERVICE_FEE * FINDER_SHARE // 100),
         expire_hours=PAYMENT_EXPIRE_HOURS,
         handover_hours=HANDOVER_ASK_HOURS + HANDOVER_ESCALATE_HOURS,
         retention_days=DATA_RETENTION_DAYS,
-        admin=ADMIN_USERNAME or "Bot orqali",
+        admin=ADMIN_USERNAME or t("terms.via_bot", lang),
     )
     lines = []
     for line in text.splitlines():
-        if line.startswith("Tahrir:"):
+        if line.startswith(("Tahrir:", "Редакция:")):
             lines.append(f"<i>{escape(line, quote=False)}</i>")
         elif line.startswith("#"):
             lines.append(f"<b>{escape(line.lstrip('# '), quote=False)}</b>")
@@ -81,10 +77,10 @@ def offer_pages() -> list[str]:
     return pages
 
 
-async def require_terms(message: Message, user_id: int, action: str) -> bool:
+async def require_terms(message: Message, user_id: int, action: str, lang: str = "uz") -> bool:
     """True — rozilik bor, davom etish mumkin.
     False — rozilik so'raldi; "Roziman" bosilgach `action` (found / claim_15 / lostsub_phone) avtomatik davom etadi."""
     if await db.has_accepted_terms(user_id, OFFER_VERSION):
         return True
-    await message.answer(SUMMARY, reply_markup=terms_kb(action, OFFER_URL))
+    await message.answer(summary(lang), reply_markup=terms_kb(action, OFFER_URL, lang))
     return False

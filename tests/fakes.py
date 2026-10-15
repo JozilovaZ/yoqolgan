@@ -22,7 +22,7 @@ import database as db
 from alerts import on_error
 from config import ADMIN_GROUP_ID
 from handlers import get_routers
-from middlewares import BanMiddleware
+from middlewares import BanMiddleware, LangMiddleware
 
 ADMIN = 10  # admin guruh a'zosi
 BOT_ID = 1
@@ -39,6 +39,7 @@ def dispatcher() -> Dispatcher:
         _dispatcher.errors.register(on_error)
         for observer in (_dispatcher.message, _dispatcher.callback_query, _dispatcher.pre_checkout_query):
             observer.outer_middleware(BanMiddleware())
+            observer.outer_middleware(LangMiddleware())
     return _dispatcher
 
 

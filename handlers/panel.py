@@ -15,6 +15,7 @@ from backup import send_backup
 from charts import daily_chart
 from config import ADMIN_GROUP_ID, FINDER_SHARE, SERVICE_FEE
 from export import build_export
+from i18n import t, user_lang
 from keyboards import broadcast_kb, item_card_kb, payouts_list_kb, stats_kb, user_card_kb
 from services import mark_post_returned, post_link
 from utils import (
@@ -242,13 +243,8 @@ async def mark_returned(callback: CallbackQuery, bot: Bot):
     await mark_post_returned(bot, item)
     closed = await db.close_open_claims(item["id"])
     for claim in closed:
-        await safe_send(
-            bot,
-            claim["owner_id"],
-            f"😔 #{code} e'loni yopildi — narsa egasiga qaytarilgan.\n"
-            "Agar to'lov qilib qo'ygan bo'lsangiz, admin bilan bog'laning.",
-        )
-    await safe_send(bot, item["finder_id"], f"✅ #{code} e'loningiz yopildi — narsa egasiga qaytarildi. Rahmat! 🙏")
+        await safe_send(bot, claim["owner_id"], t("adm.closed_claimant", await user_lang(claim["owner_id"]), code=code))
+    await safe_send(bot, item["finder_id"], t("adm.closed_finder", await user_lang(item["finder_id"]), code=code))
 
     note = f"\n\n✅ Qaytarildi deb belgilandi — <i>{escape(callback.from_user.full_name)}</i>"
     paid = [claim for claim in closed if claim["status"] == "payment_review"]
@@ -275,12 +271,13 @@ async def _resolve_user(value: str) -> int | None:
 
 async def _set_banned(bot: Bot, user_id: int, banned: bool, reason: str = "") -> None:
     await db.set_banned(user_id, banned)
+    lang = await user_lang(user_id)
     if banned:
-        text = "⛔ Siz botdan foydalanishdan cheklandingiz."
+        text = t("adm.banned", lang)
         if reason:
-            text += f"\nSabab: {escape(reason)}"
+            text += t("adm.ban_reason", lang, reason=escape(reason))
     else:
-        text = "✅ Cheklov olib tashlandi. Botdan yana foydalanishingiz mumkin: /start"
+        text = t("adm.unbanned", lang)
     await safe_send(bot, user_id, text)
     logger.info("Foydalanuvchi %s: banned=%s", user_id, banned)
 

@@ -23,7 +23,7 @@ from config import (
 )
 from alerts import on_error
 from handlers import get_routers
-from middlewares import BanMiddleware
+from middlewares import BanMiddleware, LangMiddleware
 from utils import safe_send
 from scheduler import run_scheduler
 
@@ -93,13 +93,25 @@ async def main() -> None:
     dp.errors.register(on_error)  # kutilmagan xato — admin guruhga xabar
     for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
         observer.outer_middleware(BanMiddleware())
+        observer.outer_middleware(LangMiddleware())
 
     await bot.set_my_commands(
         [
             BotCommand(command="start", description="Asosiy menyu"),
             BotCommand(command="cancel", description="Bekor qilish"),
+            BotCommand(command="lang", description="Tilni o'zgartirish / Язык"),
             BotCommand(command="oferta", description="Foydalanish shartlari"),
         ]
+    )
+    # Telegram ilovasi ruscha bo'lganlarga
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="cancel", description="Отмена"),
+            BotCommand(command="lang", description="Сменить язык / Til"),
+            BotCommand(command="oferta", description="Условия использования"),
+        ],
+        language_code="ru",
     )
     # Admin guruhda "/" bosilganda chiqadigan buyruqlar
     if ADMIN_GROUP_ID:

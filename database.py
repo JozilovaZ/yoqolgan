@@ -50,6 +50,16 @@ CREATE TABLE IF NOT EXISTS claims (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- To'lovdan keyin egasi va topuvchi o'rtasidagi bot orqali yozishma (nizoda admin ko'radi)
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id INTEGER NOT NULL REFERENCES claims(id),
+    sender_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,  -- text | photo | voice | location | ...
+    text TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Bot holati (masalan, oxirgi zaxira sanasi) — qayta ishga tushganda ham saqlanadi
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -95,6 +105,8 @@ MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN terms_version TEXT",
     "ALTER TABLE users ADD COLUMN terms_accepted_at TEXT",
     "ALTER TABLE claims ADD COLUMN handover_escalated INTEGER NOT NULL DEFAULT 0",
+    # Foydalanuvchi tili: uz | ru (NULL — hali tanlanmagan)
+    "ALTER TABLE users ADD COLUMN lang TEXT",
     (
         "ALTER TABLE claims ADD COLUMN handover TEXT",
         # Bu yangilanishdan oldin yakunlangan murojaatlar topshirilgan deb hisoblanadi — suyunchisi to'xtab qolmasin
@@ -192,6 +204,18 @@ async def accept_terms(user_id: int, version: str) -> None:
         "ON CONFLICT(user_id) DO UPDATE SET terms_version = excluded.terms_version, "
         "terms_accepted_at = excluded.terms_accepted_at",
         (user_id, version),
+    )
+
+
+async def get_lang(user_id: int) -> str | None:
+    row = await _fetchone("SELECT lang FROM users WHERE user_id = ?", (user_id,))
+    return row["lang"] if row else None
+
+
+async def set_lang(user_id: int, lang: str) -> None:
+    await _execute(
+        "INSERT INTO users (user_id, lang) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET lang = excluded.lang",
+        (user_id, lang),
     )
 
 
@@ -294,6 +318,22 @@ async def list_user_claims(user_id: int, limit: int = 10) -> list[dict]:
     return await _fetchall("SELECT * FROM claims WHERE owner_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
 
 
+async def count_open_claims(item_id: int) -> int:
+    row = await _fetchone(
+        "SELECT COUNT(*) AS count FROM claims WHERE item_id = ? "
+        "AND status IN ('checking', 'awaiting_payment', 'payment_review')",
+        (item_id,),
+    )
+    return row["count"]
+
+
+async def get_item_deal(item_id: int) -> dict | None:
+    """E'lon bo'yicha to'langan (yakunlangan) murojaat — topshirish va suyunchi holati uchun."""
+    return await _fetchone(
+        "SELECT * FROM claims WHERE item_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1", (item_id,)
+    )
+
+
 async def find_claims_by_phone(digits: str, limit: int = 10) -> list[dict]:
     return await _fetchall(
         "SELECT * FROM claims WHERE REPLACE(REPLACE(owner_phone, '+', ''), ' ', '') LIKE ? ORDER BY id DESC LIMIT ?",
@@ -380,6 +420,21 @@ async def get_claim_awaiting_payment(owner_id: int) -> dict | None:
         "SELECT * FROM claims WHERE owner_id = ? AND status = 'awaiting_payment' ORDER BY id DESC LIMIT 1",
         (owner_id,),
     )
+
+
+# ---------- egasi va topuvchi yozishmasi ----------
+
+async def add_chat_message(claim_id: int, sender_id: int, kind: str, text: str) -> None:
+    await _insert("chat_messages", {"claim_id": claim_id, "sender_id": sender_id, "kind": kind, "text": text})
+
+
+async def list_chat_messages(claim_id: int) -> list[dict]:
+    return await _fetchall("SELECT * FROM chat_messages WHERE claim_id = ? ORDER BY id", (claim_id,))
+
+
+async def count_chat_messages(claim_id: int) -> int:
+    row = await _fetchone("SELECT COUNT(*) AS count FROM chat_messages WHERE claim_id = ?", (claim_id,))
+    return row["count"]
 
 
 # ---------- yo'qotilgan narsalar ----------
@@ -474,8 +529,14 @@ async def purge_personal_data(days: int) -> dict:
         reports = await db.execute(
             "DELETE FROM lost_reports WHERE status = 'closed' AND created_at <= datetime('now', ?)", period
         )
+        chats = await db.execute("DELETE FROM chat_messages WHERE created_at <= datetime('now', ?)", period)
         await db.commit()
-        return {"items": items.rowcount, "claims": claims.rowcount, "lost_reports": reports.rowcount}
+        return {
+            "items": items.rowcount,
+            "claims": claims.rowcount,
+            "lost_reports": reports.rowcount,
+            "chat_messages": chats.rowcount,
+        }
 
 
 # ---------- statistika ----------

@@ -18,6 +18,7 @@ from config import (
     PAYMENT_PROVIDER_TOKEN,
     SERVICE_FEE,
 )
+from i18n import t, user_lang
 from images import blurred_photo
 from keyboards import channel_post_kb, dispute_kb, handover_kb, lost_match_kb, payout_kb
 from matching import is_match
@@ -77,11 +78,12 @@ async def notify_lost_owners(bot: Bot, item: dict, message_id: int) -> None:
         if report["owner_id"] in notified or not is_match(report, item):
             continue
         notified.add(report["owner_id"])
+        lang = await user_lang(report["owner_id"])
         await safe_send(
             bot,
             report["owner_id"],
-            lost_match_text(item, report),
-            reply_markup=lost_match_kb(item["id"], report["id"], post_link(message_id)),
+            lost_match_text(item, report, lang),
+            reply_markup=lost_match_kb(item["id"], report["id"], post_link(message_id), lang),
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     if notified:
@@ -100,31 +102,22 @@ async def request_payment(bot: Bot, claim: dict, item: dict, intro: str = "") ->
     intro — boshidagi matn (sukut bo'yicha tabrik; eslatmada boshqacha).
     """
     code = item_code(item["id"])
-    intro = intro or (
-        f"🎉 <b>Tabriklaymiz!</b> #{code} — {category_label(item['category'])} sizniki ekanligi tasdiqlandi.\n\n"
-    )
-    text = (
-        intro + f"Topuvchi bilan bog'lanish uchun xizmat haqini to'lang: <b>{money(SERVICE_FEE)} so'm</b>\n"
-        f"🎁 Shundan {FINDER_SHARE}% narsangizni topgan insonga suyunchi sifatida beriladi.\n"
-        f"⏳ To'lov uchun {PAYMENT_EXPIRE_HOURS} soat vaqt bor, keyin murojaat yopiladi.\n\n"
-    )
+    lang = await user_lang(claim["owner_id"])
+    category = category_label(item["category"], lang)
+    intro = intro or t("pay.congrats", lang, code=code, category=category)
+    text = intro + t("pay.body", lang, fee=money(SERVICE_FEE), share=FINDER_SHARE, hours=PAYMENT_EXPIRE_HOURS)
     if PAYMENT_PROVIDER_TOKEN:
         try:
             await bot.send_invoice(
                 claim["owner_id"],
-                title=f"Xizmat haqi #{code}",
-                description=f"{category_label(item['category'])} topgan inson bilan bog'lanish",
+                title=t("pay.invoice_title", lang, code=code),
+                description=t("pay.invoice_description", lang, category=category),
                 payload=f"claim:{claim['id']}",
                 provider_token=PAYMENT_PROVIDER_TOKEN,
                 currency="UZS",
-                prices=[LabeledPrice(label="Xizmat haqi", amount=SERVICE_FEE * 100)],  # tiyinda
+                prices=[LabeledPrice(label=t("pay.invoice_label", lang), amount=SERVICE_FEE * 100)],  # tiyinda
             )
-            await safe_send(
-                bot,
-                claim["owner_id"],
-                text + "💳 Yuqoridagi <b>«To'lash»</b> tugmasini bosing — to'lov tushishi bilan "
-                "topuvchining kontaktini darhol yuboraman.",
-            )
+            await safe_send(bot, claim["owner_id"], text + t("pay.online", lang))
             return
         except TelegramAPIError as error:
             logger.error("Invoice yuborilmadi, karta orqali to'lovga o'tildi: %s", error)
@@ -132,30 +125,37 @@ async def request_payment(bot: Bot, claim: dict, item: dict, intro: str = "") ->
     await safe_send(
         bot,
         claim["owner_id"],
-        text + f"💳 Karta: <code>{escape(CARD_NUMBER)}</code>\n"
-        f"👤 {escape(CARD_OWNER)}\n\n"
-        "📸 To'lovdan so'ng <b>chek skrinshotini shu yerga yuboring.</b>",
+        text + t("pay.card", lang, card=escape(CARD_NUMBER), owner=escape(CARD_OWNER)),
     )
 
 
-async def mark_post_returned(bot: Bot, item: dict) -> None:
-    """Kanaldagi post "✅ EGASIGA QAYTARILDI" ga o'zgaradi, "Bu meniki" tugmasi olib tashlanadi."""
-    returned_text = channel_post_text(item, returned=True)
+async def _edit_post(bot: Bot, item: dict, text: str, keyboard) -> None:
     try:
         if item["publish_mode"] in ("photo", "blur"):
             await bot.edit_message_caption(
-                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=returned_text, reply_markup=None
+                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=text, reply_markup=keyboard
             )
         else:
             await bot.edit_message_text(
-                returned_text,
+                text,
                 chat_id=CHANNEL_ID,
                 message_id=item["channel_msg_id"],
-                reply_markup=None,
+                reply_markup=keyboard,
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
     except TelegramAPIError as error:
         logger.warning("Kanal posti yangilanmadi: %s", error)
+
+
+async def mark_post_returned(bot: Bot, item: dict) -> None:
+    """Kanaldagi post "✅ EGASIGA QAYTARILDI" ga o'zgaradi, "Bu meniki" tugmasi olib tashlanadi."""
+    await _edit_post(bot, item, channel_post_text(item, returned=True), None)
+
+
+async def refresh_post(bot: Bot, item: dict) -> None:
+    """E'lon tahrirlangandan keyin kanaldagi post matni yangilanadi ("Bu meniki" tugmasi qoladi)."""
+    me = await bot.me()
+    await _edit_post(bot, item, channel_post_text(item), channel_post_kb(me.username, item["id"]))
 
 
 async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "") -> None:
@@ -170,34 +170,38 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
     share = SERVICE_FEE * FINDER_SHARE // 100
 
     # Egasiga topuvchining kontakti
+    owner_lang = await user_lang(claim["owner_id"])
     await safe_send(
         bot,
         claim["owner_id"],
-        f"✅ <b>To'lov tasdiqlandi!</b>\n\n"
-        f"#{code} — {category_label(item['category'])} topgan inson bilan bog'laning:\n\n"
-        f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
-        f"📞 <b>{escape(item['finder_phone'] or '')}</b>\n\n"
-        "Narsangizni olishda omad! 🍀\n\n"
-        "📦 Narsani qo'lingizga olgach, <b>«✅ Narsamni oldim»</b> tugmasini bosing. "
-        "Topuvchi bilan bog'lana olmasangiz — pastdagi ikkinchi tugmani bosing, admin yordam beradi.",
-        reply_markup=handover_kb(claim["id"], "o"),
+        t(
+            "deal.owner",
+            owner_lang,
+            code=code,
+            category=category_label(item["category"], owner_lang),
+            finder=user_link(item["finder_id"], item["finder_name"], item["finder_username"]),
+            phone=escape(item["finder_phone"] or ""),
+        ),
+        reply_markup=handover_kb(claim["id"], "o", owner_lang),
     )
 
     # Topuvchiga egasining kontakti
-    finder_text = (
-        f"🎉 <b>#{code} e'loningiz egasi topildi!</b>\n\n"
-        f"👤 {user_link(claim['owner_id'], claim['owner_name'], claim['owner_username'])}\n"
-        f"📞 <b>{escape(claim['owner_phone'] or '')}</b>\n\n"
-        "U siz bilan bog'lanadi. Narsani topshirishda shaxsini tekshirib oling.\n\n"
-        f"🎁 Suyunchi: <b>{money(share)} so'm</b> — egasi narsani olganini tasdiqlagach "
+    finder_lang = await user_lang(item["finder_id"])
+    finder_text = t(
+        "deal.finder",
+        finder_lang,
+        code=code,
+        owner=user_link(claim["owner_id"], claim["owner_name"], claim["owner_username"]),
+        phone=escape(claim["owner_phone"] or ""),
+        amount=money(share),
     )
     if item["finder_card"]:
-        finder_text += f"kartangizga ({escape(item['finder_card'])}) o'tkaziladi."
+        finder_text += t("deal.finder_card", finder_lang, card=escape(item["finder_card"]))
     else:
-        finder_text += "beriladi. Olish uchun karta raqamingizni adminga yuboring"
+        finder_text += t("deal.finder_no_card", finder_lang)
         finder_text += f": {ADMIN_USERNAME}." if ADMIN_USERNAME else "."
-    finder_text += "\n\nNarsani topshirgach, pastdagi tugmani bosing. Yaxshilik qilganingiz uchun rahmat! 🙏"
-    await safe_send(bot, item["finder_id"], finder_text, reply_markup=handover_kb(claim["id"], "f"))
+    finder_text += t("deal.finder_footer", finder_lang)
+    await safe_send(bot, item["finder_id"], finder_text, reply_markup=handover_kb(claim["id"], "f", finder_lang))
 
     await mark_post_returned(bot, item)
 
@@ -238,6 +242,8 @@ async def report_dispute(bot: Bot, claim_id: int, reason: str) -> None:
     """Narsa topshirilmagan bo'lishi mumkin — admin guruhga ikki tomon kontaktlari va qaror tugmalari bilan."""
     claim = await db.get_claim(claim_id)
     item = await db.get_item(claim["item_id"])
+    chat_messages = await db.count_chat_messages(claim_id)
+    chat_note = f"💬 Bot orqali yozishma: {chat_messages} ta xabar\n\n" if chat_messages else ""
     await safe_send(
         bot,
         ADMIN_GROUP_ID,
@@ -249,6 +255,6 @@ async def report_dispute(bot: Bot, claim_id: int, reason: str) -> None:
         f"👤 Topuvchi: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])} "
         f"📞 {escape(item['finder_phone'] or '—')}\n"
         f"   └ {ANSWERS['f'][claim['finder_answer']]}\n\n"
-        "Ikki tomon bilan bog'lanib, hal qiling 👇",
-        reply_markup=dispute_kb(claim["id"]),
+        f"{chat_note}Ikki tomon bilan bog'lanib, hal qiling 👇",
+        reply_markup=dispute_kb(claim["id"], chat_messages),
     )

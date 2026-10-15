@@ -127,7 +127,7 @@ async def test_online_payment(tg, monkeypatch):
     claim = await db.get_claim(claim["id"])
     assert claim["status"] == "completed" and claim["payment_charge_id"] == "click-777"
     assert (await db.get_item(item["id"]))["status"] == "returned"
-    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim['id']}", f"ho:o:no:{claim['id']}"]
+    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim['id']}", f"ho:o:no:{claim['id']}", f"chat:{claim['id']}"]
     assert "click-777" in tg.texts(ADMIN_GROUP_ID)[0]
 
 

@@ -6,16 +6,15 @@ import traceback
 from html import escape
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ErrorEvent, Message
 
 from config import ADMIN_GROUP_ID
+from i18n import t, user_lang
 from utils import cut, safe_send
 
 logger = logging.getLogger(__name__)
 
 THROTTLE_SECONDS = 30 * 60
-USER_TEXT = "⚠️ Kutilmagan xatolik yuz berdi. Admin xabardor qilindi — biroz kutib, qayta urinib ko'ring."
 
 # xato kaliti -> oxirgi yuborilgan vaqt
 _last_sent: dict[str, float] = {}
@@ -54,9 +53,10 @@ async def on_error(event: ErrorEvent, bot: Bot) -> None:
 
     # Foydalanuvchi javobsiz qolmasin
     try:
+        text = t("common.error", await user_lang(user.id) if user else "uz")
         if isinstance(update.event, Message) and update.event.chat.type == "private":
-            await update.event.answer(USER_TEXT)
+            await update.event.answer(text)
         elif isinstance(update.event, CallbackQuery):
-            await update.event.answer(USER_TEXT, show_alert=True)
-    except TelegramAPIError:
+            await update.event.answer(text, show_alert=True)
+    except Exception:  # xato haqidagi xabar yangi xato chiqarmasin (masalan, baza ishlamasa)
         pass

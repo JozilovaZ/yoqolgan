@@ -7,6 +7,7 @@ from aiogram.types import Message, PreCheckoutQuery
 
 import database as db
 from config import ADMIN_GROUP_ID, ADMIN_USERNAME, SERVICE_FEE
+from i18n import t
 from keyboards import main_menu
 from services import complete_claim
 from utils import item_code, money, safe_send, user_link
@@ -25,21 +26,21 @@ async def _claim_from_payload(payload: str) -> dict | None:
 
 
 @router.pre_checkout_query()
-async def pre_checkout(query: PreCheckoutQuery):
+async def pre_checkout(query: PreCheckoutQuery, lang: str):
     """To'lovdan oldingi oxirgi tekshiruv: Telegram 10 soniya ichida javob kutadi."""
     claim = await _claim_from_payload(query.invoice_payload)
     error = None
     if not claim or claim["owner_id"] != query.from_user.id or claim["status"] != "awaiting_payment":
-        error = "Bu to'lov endi amalda emas."
+        error = t("pay.err_inactive", lang)
     elif (await db.get_item(claim["item_id"]))["status"] != "published":
-        error = "Afsuski, bu narsa boshqa egaga qaytarilgan."
+        error = t("pay.err_returned", lang)
     elif query.total_amount != SERVICE_FEE * 100:
-        error = "Xizmat haqi o'zgargan. E'londagi «Bu meniki» tugmasini qaytadan bosing."
+        error = t("pay.err_fee", lang)
     await query.answer(ok=error is None, error_message=error)
 
 
 @router.message(F.successful_payment)
-async def successful_payment(message: Message, bot: Bot):
+async def successful_payment(message: Message, bot: Bot, lang: str):
     payment = message.successful_payment
     charge_id = payment.provider_payment_charge_id or payment.telegram_payment_charge_id
     claim = await _claim_from_payload(payment.invoice_payload)
@@ -70,10 +71,10 @@ async def successful_payment(message: Message, bot: Bot):
             f"Summa: {money(payment.total_amount // 100)} so'm\n"
             f"To'lov ID: <code>{escape(charge_id)}</code>",
         )
-        text = "⚠️ To'lovingiz qabul qilindi, lekin murojaatingiz endi faol emas. Pulingiz qaytariladi."
+        text = t("pay.refund_notice", lang)
         if ADMIN_USERNAME:
-            text += f"\nSavollar uchun: {ADMIN_USERNAME}"
-        await message.answer(text, reply_markup=main_menu())
+            text += "\n" + t("common.questions", lang, admin=ADMIN_USERNAME)
+        await message.answer(text, reply_markup=main_menu(lang))
         return
 
     await complete_claim(bot, claim, item, charge_id=charge_id)

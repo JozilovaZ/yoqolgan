@@ -13,6 +13,7 @@ from aiogram.types import Message, User
 
 import database as db
 from config import ADMIN_GROUP_ID, AUTO_VERIFY_DOCUMENTS, PAYMENT_PROVIDER_TOKEN
+from i18n import t
 from keyboards import cancel_kb, claim_review_kb, claim_undo_kb, main_menu, payment_review_kb, phone_kb
 from consent import require_terms
 from services import request_payment
@@ -32,14 +33,14 @@ class ClaimForm(StatesGroup):
     phone = State()
 
 
-async def start_claim(message: Message, state: FSMContext, item_id: int, user: User):
+async def start_claim(message: Message, state: FSMContext, item_id: int, user: User, lang: str):
     """Kanaldagi "Bu meniki" tugmasi yoki qidiruv ro'yxatidan chaqiriladi."""
     item = await db.get_item(item_id)
     if not item or item["status"] != "published":
-        await message.answer("Bu e'lon topilmadi yoki egasiga allaqachon qaytarilgan.", reply_markup=main_menu())
+        await message.answer(t("claim.not_available", lang), reply_markup=main_menu(lang))
         return
     if item["finder_id"] == user.id:
-        await message.answer("Bu o'zingiz bergan e'lon 🙂", reply_markup=main_menu())
+        await message.answer(t("claim.own", lang), reply_markup=main_menu(lang))
         return
 
     open_claim = await db.get_open_claim(user.id, item_id)
@@ -49,72 +50,57 @@ async def start_claim(message: Message, state: FSMContext, item_id: int, user: U
                 # To'lov oynasini qaytadan yuboramiz
                 await request_payment(message.bot, open_claim, item)
                 return
-            text ="Siz bu narsa uchun allaqachon tasdiqlangansiz. To'lov chekini (skrinshot) shu yerga yuboring 📸"
+            text = t("claim.already_approved", lang)
         else:
-            text = "Murojaatingiz ko'rib chiqilmoqda. Iltimos, kuting ⏳"
-        await message.answer(text, reply_markup=main_menu())
+            text = t("claim.in_review", lang)
+        await message.answer(text, reply_markup=main_menu(lang))
         return
 
-    if not await require_terms(message, user.id, f"claim_{item_id}"):
+    if not await require_terms(message, user.id, f"claim_{item_id}", lang):
         return
 
     await state.set_state(ClaimForm.proof)
     await state.update_data(item_id=item_id)
 
-    if is_document(item["category"]):
-        question = (
-            "🔐 <b>Egalikni isbotlang:</b>\n"
-            "Hujjat egasining <b>to'liq ism-familiyasini</b> va "
-            "hujjat raqamining <b>oxirgi 3 ta raqamini</b> yozing."
-        )
-    else:
-        question = (
-            "🔐 <b>Egalikni isbotlang:</b>\n"
-            "Narsangizni batafsil tasvirlab bering: rangi, markasi, o'ziga xos belgilari, "
-            "ichida nima bor edi va h.k. Kanalda yozilmagan tafsilotlar qanchalik ko'p bo'lsa, shuncha yaxshi."
-        )
+    question = t("claim.q_proof_doc" if is_document(item["category"]) else "claim.q_proof_item", lang)
     await message.answer(
-        f"Siz <b>#{item_code(item_id)}</b> — {category_label(item['category'])} e'loniga murojaat qilyapsiz.\n\n"
-        + question,
-        reply_markup=cancel_kb(),
+        t("claim.intro", lang, code=item_code(item_id), category=category_label(item["category"], lang)) + question,
+        reply_markup=cancel_kb(lang),
     )
 
 
 @router.message(ClaimForm.proof, F.text)
-async def got_proof(message: Message, state: FSMContext):
+async def got_proof(message: Message, state: FSMContext, lang: str):
     if len(message.text) > 500:
-        await message.answer("Juda uzun. Iltimos, 500 belgigacha yozing.")
+        await message.answer(t("common.too_long_500", lang))
         return
     await state.update_data(proof=message.text.strip())
     await state.set_state(ClaimForm.phone)
-    await message.answer(
-        "📞 <b>Telefon raqamingizni yuboring</b> — tasdiqlangandan keyin topuvchiga beriladi.",
-        reply_markup=phone_kb(),
-    )
+    await message.answer(t("claim.q_phone", lang), reply_markup=phone_kb(lang))
 
 
 @router.message(ClaimForm.phone, F.contact)
-async def got_contact(message: Message, state: FSMContext, bot: Bot):
-    await _finish_claim(message, state, bot, message.contact.phone_number)
+async def got_contact(message: Message, state: FSMContext, bot: Bot, lang: str):
+    await _finish_claim(message, state, bot, message.contact.phone_number, lang)
 
 
 @router.message(ClaimForm.phone, F.text)
-async def got_phone_text(message: Message, state: FSMContext, bot: Bot):
+async def got_phone_text(message: Message, state: FSMContext, bot: Bot, lang: str):
     phone = message.text.replace(" ", "").replace("-", "")
     if not PHONE_RE.match(phone):
-        await message.answer("Raqam noto'g'ri. Tugmani bosing yoki +998901234567 ko'rinishida yozing.")
+        await message.answer(t("common.phone_invalid", lang))
         return
-    await _finish_claim(message, state, bot, phone)
+    await _finish_claim(message, state, bot, phone, lang)
 
 
-async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: str):
+async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: str, lang: str):
     data = await state.get_data()
     await state.clear()
     user = message.from_user
 
     item = await db.get_item(data["item_id"])
     if not item or item["status"] != "published":
-        await message.answer("Afsuski, bu e'lon endi faol emas.", reply_markup=main_menu())
+        await message.answer(t("claim.inactive", lang), reply_markup=main_menu(lang))
         return
 
     claim_id = await db.create_claim(
@@ -131,7 +117,7 @@ async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: st
     # Hujjat bo'lsa — avval OCR bilan o'zimiz tekshiramiz
     verdict = None
     if AUTO_VERIFY_DOCUMENTS and is_document(item["category"]):
-        wait = await message.answer("⏳ Ma'lumotlaringiz hujjat bilan solishtirilmoqda...")
+        wait = await message.answer(t("claim.verifying", lang))
         verdict = await verify_document_claim(bot, item, data["proof"])
         await wait.delete()
 
@@ -165,36 +151,25 @@ async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: st
         logger.error("Admin guruhga yuborilmadi: %s", error)
 
     if approved:
-        await message.answer("✅ Ma'lumotlaringiz hujjat bilan mos keldi!", reply_markup=main_menu())
+        await message.answer(t("claim.auto_ok", lang), reply_markup=main_menu(lang))
         await request_payment(bot, await db.get_claim(claim_id), item)
         return
 
-    await message.answer(
-        "✅ Murojaatingiz adminga yuborildi.\n"
-        "Tekshiruvdan so'ng sizga to'lov ma'lumotlari yuboriladi. Iltimos, kuting ⏳",
-        reply_markup=main_menu(),
-    )
+    await message.answer(t("claim.sent", lang), reply_markup=main_menu(lang))
 
 
 @router.message(StateFilter(None), F.photo)
-async def got_receipt(message: Message, bot: Bot):
+async def got_receipt(message: Message, bot: Bot, lang: str):
     """To'lov cheki (skrinshot). Holat DB da saqlanadi, shuning uchun bot qayta ishga tushsa ham ishlaydi."""
     claim = await db.get_claim_awaiting_payment(message.from_user.id)
     if not claim:
-        await message.answer(
-            "Rasmni nima uchun yuborganingizni tushunmadim 🤔\nQuyidagi menyudan foydalaning.",
-            reply_markup=main_menu(),
-        )
+        await message.answer(t("claim.unknown_photo", lang), reply_markup=main_menu(lang))
         return
 
     item = await db.get_item(claim["item_id"])
     if item["status"] != "published":
         await db.update_claim(claim["id"], status="rejected")
-        await message.answer(
-            f"⚠️ #{item_code(item['id'])} e'loni endi faol emas — narsa boshqa egaga qaytarilgan.\n"
-            "Agar to'lov qilib qo'ygan bo'lsangiz, admin bilan bog'laning.",
-            reply_markup=main_menu(),
-        )
+        await message.answer(t("claim.receipt_item_gone", lang, code=item_code(item["id"])), reply_markup=main_menu(lang))
         return
 
     photo_id = message.photo[-1].file_id
@@ -212,4 +187,4 @@ async def got_receipt(message: Message, bot: Bot):
     except TelegramAPIError as error:
         logger.error("Admin guruhga yuborilmadi: %s", error)
 
-    await message.answer("✅ Chek qabul qilindi. Admin tekshirgach, topuvchi bilan bog'lab beramiz ⏳")
+    await message.answer(t("claim.receipt_ok", lang))

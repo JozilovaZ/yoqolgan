@@ -19,7 +19,8 @@ from config import (
     PAYMENT_EXPIRE_HOURS,
     PAYMENT_REMIND_HOURS,
 )
-from keyboards import BTN_LOST, handover_kb
+from i18n import t, user_lang
+from keyboards import handover_kb
 from matching import MATCH_DAYS
 from services import report_dispute, request_payment
 from utils import category_label, item_code, lost_code, safe_send
@@ -34,12 +35,8 @@ async def expire_unpaid_claims(bot: Bot) -> None:
     for claim in await db.list_unpaid_claims(PAYMENT_EXPIRE_HOURS):
         await db.update_claim(claim["id"], status="expired")
         code = item_code(claim["item_id"])
-        await safe_send(
-            bot,
-            claim["owner_id"],
-            f"⌛ #{code} bo'yicha murojaatingiz {PAYMENT_EXPIRE_HOURS} soat ichida to'lov qilinmagani uchun yopildi.\n\n"
-            "Narsa hali egasini kutayotgan bo'lsa, kanaldagi <b>«🙋 Bu meniki»</b> tugmasini qaytadan bosishingiz mumkin.",
-        )
+        lang = await user_lang(claim["owner_id"])
+        await safe_send(bot, claim["owner_id"], t("sch.expired", lang, code=code, hours=PAYMENT_EXPIRE_HOURS))
         await safe_send(
             bot, ADMIN_GROUP_ID, f"⌛ Murojaat №{claim['id']} (#{code}) to'lov qilinmagani uchun avtomatik yopildi."
         )
@@ -53,10 +50,8 @@ async def remind_unpaid_claims(bot: Bot) -> None:
         item = await db.get_item(claim["item_id"])
         if item["status"] != "published":
             continue  # narsa boshqa egaga qaytarilgan — to'lov endi kerak emas
-        intro = (
-            f"⏰ <b>Eslatma:</b> #{item_code(item['id'])} — {category_label(item['category'])} uchun to'lov hali qilinmagan.\n"
-            f"Taxminan <b>{left} soat</b> ichida to'lanmasa, murojaat yopiladi.\n\n"
-        )
+        lang = await user_lang(claim["owner_id"])
+        intro = t("sch.remind", lang, code=item_code(item["id"]), category=category_label(item["category"], lang), left=left)
         await request_payment(bot, claim, item, intro=intro)
 
 
@@ -87,19 +82,17 @@ async def ask_handover(bot: Bot) -> None:
         item = await db.get_item(claim["item_id"])
         code = item_code(item["id"])
         if not claim["owner_answer"]:
+            lang = await user_lang(claim["owner_id"])
             await safe_send(
                 bot,
                 claim["owner_id"],
-                f"📦 #{code} — {category_label(item['category'])}: <b>narsangizni oldingizmi?</b>",
-                reply_markup=handover_kb(claim["id"], "o"),
+                t("sch.ask_owner", lang, code=code, category=category_label(item["category"], lang)),
+                reply_markup=handover_kb(claim["id"], "o", lang),
             )
         if not claim["finder_answer"]:
+            lang = await user_lang(item["finder_id"])
             await safe_send(
-                bot,
-                item["finder_id"],
-                f"📦 #{code}: <b>narsani egasiga topshirdingizmi?</b>\n"
-                "Suyunchi topshirilgani tasdiqlangach o'tkaziladi.",
-                reply_markup=handover_kb(claim["id"], "f"),
+                bot, item["finder_id"], t("sch.ask_finder", lang, code=code), reply_markup=handover_kb(claim["id"], "f", lang)
             )
 
 
@@ -115,11 +108,18 @@ async def close_outdated_lost_reports(bot: Bot) -> None:
     """Yo'qotilganiga MATCH_DAYS kun bo'lgan qidiruvlarga endi mos narsa chiqmaydi — yopiladi."""
     for report in await db.list_outdated_lost_reports(MATCH_DAYS):
         await db.update_lost_report(report["id"], status="closed")
+        lang = await user_lang(report["owner_id"])
         await safe_send(
             bot,
             report["owner_id"],
-            f"⌛ #{lost_code(report['id'])} — {category_label(report['category'])} qidiruvingiz muddati tugadi "
-            f"({MATCH_DAYS} kun).\n\nNarsangiz hali topilmagan bo'lsa, <b>«{BTN_LOST}»</b> bo'limida yangi e'lon qoldiring.",
+            t(
+                "sch.search_expired",
+                lang,
+                code=lost_code(report["id"]),
+                category=category_label(report["category"], lang),
+                days=MATCH_DAYS,
+                button=t("btn.lost", lang),
+            ),
         )
 
 

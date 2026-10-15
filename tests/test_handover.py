@@ -20,8 +20,8 @@ async def paid_claim(tg) -> int:
 
 async def test_after_payment_buttons_but_no_payout_yet(tg):
     claim_id = await paid_claim(tg)
-    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}"]
-    assert buttons(tg.to(FINDER)[0]) == [f"ho:f:yes:{claim_id}", f"ho:f:no:{claim_id}"]
+    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]
+    assert buttons(tg.to(FINDER)[0]) == [f"ho:f:yes:{claim_id}", f"ho:f:no:{claim_id}", f"chat:{claim_id}"]
     assert "Ikki tomon bog'landi" in tg.admin[0] and "Suyunchi o'tkazish kerak" not in tg.admin[0]
     assert await db.list_unpaid_payouts() == [] and not await db.mark_payout(claim_id)
 
@@ -35,7 +35,7 @@ async def test_stranger_cannot_answer(tg):
 async def test_finder_then_owner_confirms(tg):
     claim_id = await paid_claim(tg)
     await tg.press(f"ho:f:yes:{claim_id}", user_id=FINDER)
-    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}"]  # egasidan so'raldi
+    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]  # egasidan so'raldi
     assert not tg.admin
 
     await tg.press(f"ho:o:yes:{claim_id}", user_id=OWNER)

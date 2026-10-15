@@ -5,55 +5,78 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import CATEGORIES, REGIONS
+from i18n import category_label, months, region_label, t, variants, weekdays
 
-BTN_FOUND = "📦 Narsa topdim"
-BTN_LOST = "🔍 Narsa yo'qotdim"
-BTN_MY_SEARCHES = "🔔 Qidiruvlarim"
-BTN_RULES = "ℹ️ Qoidalar"
-BTN_CANCEL = "❌ Bekor qilish"
-BTN_SKIP = "⏭ O'tkazib yuborish"
-BTN_MANUAL_ADDRESS = "✍️ Manzilni qo'lda kiritish"
+# Asosiy (o'zbekcha) matnlar — testlar va eski kod uchun. Handlerlarda tugmalar barcha tillarda tekshiriladi:
+# F.text.in_(BUTTONS["found"])
+BTN_FOUND = t("btn.found")
+BTN_LOST = t("btn.lost")
+BTN_MY_SEARCHES = t("btn.my_searches")
+BTN_MY_ITEMS = t("btn.my_items")
+BTN_RULES = t("btn.rules")
+BTN_CANCEL = t("btn.cancel")
+BTN_SKIP = t("btn.skip")
+BTN_MANUAL_ADDRESS = t("btn.manual_address")
+BTN_CHAT_EXIT = t("btn.chat_exit")
 
-WEEKDAYS = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
+BUTTONS = {
+    name: variants(f"btn.{name}")
+    for name in (
+        "found", "lost", "my_searches", "my_items", "rules", "lang", "cancel", "skip", "manual_address", "chat_exit"
+    )
+}
 
-MONTHS = [
-    "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun",
-    "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr",
-]
 
-
-def main_menu() -> ReplyKeyboardMarkup:
+def main_menu(lang: str = "uz") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_FOUND), KeyboardButton(text=BTN_LOST)],
-            [KeyboardButton(text=BTN_MY_SEARCHES), KeyboardButton(text=BTN_RULES)],
+            [KeyboardButton(text=t("btn.found", lang)), KeyboardButton(text=t("btn.lost", lang))],
+            [KeyboardButton(text=t("btn.my_items", lang)), KeyboardButton(text=t("btn.my_searches", lang))],
+            [KeyboardButton(text=t("btn.rules", lang)), KeyboardButton(text=t("btn.lang", lang))],
         ],
         resize_keyboard=True,
     )
 
 
-def cancel_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BTN_CANCEL)]], resize_keyboard=True)
+def lang_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🇺🇿 O'zbekcha", callback_data="lang:uz")
+    builder.button(text="🇷🇺 Русский", callback_data="lang:ru")
+    return builder.as_markup()
 
 
-def location_kb() -> ReplyKeyboardMarkup:
+def cancel_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=t("btn.cancel", lang))]], resize_keyboard=True)
+
+
+def chat_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=t("btn.chat_exit", lang))]], resize_keyboard=True)
+
+
+def chat_reply_kb(claim_id: int, lang: str = "uz"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t("kb.chat_reply", lang), callback_data=f"chat:{claim_id}")
+    return builder.as_markup()
+
+
+def location_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📍 Hozir turgan joyimni yuborish", request_location=True)],
-            [KeyboardButton(text=BTN_MANUAL_ADDRESS)],
-            [KeyboardButton(text=BTN_CANCEL)],
+            [KeyboardButton(text=t("btn.send_location", lang), request_location=True)],
+            [KeyboardButton(text=t("btn.manual_address", lang))],
+            [KeyboardButton(text=t("btn.cancel", lang))],
         ],
         resize_keyboard=True,
     )
 
 
-def regions_kb(allow_unknown: bool = False):
+def regions_kb(allow_unknown: bool = False, lang: str = "uz"):
     builder = InlineKeyboardBuilder()
     for index, region in enumerate(REGIONS):
-        builder.button(text=region, callback_data=f"reg:{index}")
+        builder.button(text=region_label(region, lang), callback_data=f"reg:{index}")
     builder.adjust(2)
     if allow_unknown:
-        builder.row(InlineKeyboardButton(text="🤷 Aniq bilmayman", callback_data="reg:any"))
+        builder.row(InlineKeyboardButton(text=t("kb.unknown", lang), callback_data="reg:any"))
     return builder.as_markup()
 
 
@@ -61,7 +84,7 @@ def _ignore(text: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=text, callback_data="cal:ignore")
 
 
-def calendar_kb(year: int | None = None, month: int | None = None) -> InlineKeyboardMarkup:
+def calendar_kb(year: int | None = None, month: int | None = None, lang: str = "uz") -> InlineKeyboardMarkup:
     """Oylik kalendar. Kelajakdagi kunlarni tanlab bo'lmaydi."""
     today = date.today()
     year, month = year or today.year, month or today.month
@@ -73,10 +96,10 @@ def calendar_kb(year: int | None = None, month: int | None = None) -> InlineKeyb
     rows = [
         [
             InlineKeyboardButton(text="◀️", callback_data=f"cal:nav:{prev_month:%Y-%m}"),
-            _ignore(f"{MONTHS[month - 1]} {year}"),
+            _ignore(f"{months(lang)[month - 1]} {year}"),
             _ignore("·") if is_current else InlineKeyboardButton(text="▶️", callback_data=f"cal:nav:{next_month:%Y-%m}"),
         ],
-        [_ignore(name) for name in ("Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya")],
+        [_ignore(name) for name in weekdays(lang, short=True)],
     ]
     for week in calendar.monthcalendar(year, month):
         row = []
@@ -93,112 +116,199 @@ def calendar_kb(year: int | None = None, month: int | None = None) -> InlineKeyb
         rows.append(row)
     rows.append(
         [
-            InlineKeyboardButton(text="Bugun", callback_data=f"day:{today.isoformat()}"),
-            InlineKeyboardButton(text="Kecha", callback_data=f"day:{(today - timedelta(days=1)).isoformat()}"),
+            InlineKeyboardButton(text=t("kb.today", lang), callback_data=f"day:{today.isoformat()}"),
+            InlineKeyboardButton(
+                text=t("kb.yesterday", lang), callback_data=f"day:{(today - timedelta(days=1)).isoformat()}"
+            ),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def hours_kb(day: date):
+def hours_kb(day: date, lang: str = "uz"):
     """Soatlar: 00:00 ... 23:00. Bugun bo'lsa, hali kelmagan soatlar chiqmaydi."""
     builder = InlineKeyboardBuilder()
     last_hour = datetime.now().hour if day == date.today() else 23
     for hour in range(last_hour + 1):
         builder.button(text=f"{hour:02d}:00", callback_data=f"hour:{hour}")
     builder.adjust(4)
-    builder.row(InlineKeyboardButton(text="🤷 Aniq bilmayman", callback_data="hour:unknown"))
+    builder.row(InlineKeyboardButton(text=t("kb.unknown", lang), callback_data="hour:unknown"))
     return builder.as_markup()
 
 
-def phone_kb() -> ReplyKeyboardMarkup:
+def phone_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📞 Raqamni yuborish", request_contact=True)],
-            [KeyboardButton(text=BTN_CANCEL)],
+            [KeyboardButton(text=t("btn.send_phone", lang), request_contact=True)],
+            [KeyboardButton(text=t("btn.cancel", lang))],
         ],
         resize_keyboard=True,
     )
 
 
-def skip_kb() -> ReplyKeyboardMarkup:
+def skip_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=BTN_SKIP)], [KeyboardButton(text=BTN_CANCEL)]],
+        keyboard=[[KeyboardButton(text=t("btn.skip", lang))], [KeyboardButton(text=t("btn.cancel", lang))]],
         resize_keyboard=True,
     )
 
 
-def categories_kb(prefix: str):
+def categories_kb(prefix: str, lang: str = "uz"):
     builder = InlineKeyboardBuilder()
-    for key, (label, _, _) in CATEGORIES.items():
-        builder.button(text=label, callback_data=f"{prefix}:{key}")
+    for key in CATEGORIES:
+        builder.button(text=category_label(key, lang), callback_data=f"{prefix}:{key}")
     builder.adjust(2)
     return builder.as_markup()
 
 
-def terms_kb(action: str, offer_url: str = ""):
+def terms_kb(action: str, offer_url: str = "", lang: str = "uz"):
     """action — rozilikdan keyin davom etadigan amal: found / claim_15 / lostsub_phone."""
     builder = InlineKeyboardBuilder()
     if offer_url:
-        builder.button(text="📄 Oferta matni", url=offer_url)
+        builder.button(text=t("kb.offer_text", lang), url=offer_url)
     else:
-        builder.button(text="📄 Oferta matni", callback_data="terms:read")
-    builder.button(text="✅ Roziman", callback_data=f"terms:ok:{action}")
+        builder.button(text=t("kb.offer_text", lang), callback_data="terms:read")
+    builder.button(text=t("kb.agree", lang), callback_data=f"terms:ok:{action}")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def confirm_found_kb():
+def confirm_found_kb(lang: str = "uz"):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Yuborish", callback_data="found:send")
-    builder.button(text="❌ Bekor qilish", callback_data="found:cancel")
+    builder.button(text=t("kb.send", lang), callback_data="found:send")
+    builder.button(text=t("kb.cancel", lang), callback_data="found:cancel")
     return builder.as_markup()
 
 
 def channel_post_kb(bot_username: str, item_id: int):
+    """Kanal posti — doim o'zbekcha."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🙋 Bu meniki", url=f"https://t.me/{bot_username}?start=claim_{item_id}")
+    builder.button(text=t("kb.claim"), url=f"https://t.me/{bot_username}?start=claim_{item_id}")
     return builder.as_markup()
 
 
-def lost_items_kb(items: list[dict], subscribe_category: str | None = None):
+def lost_items_kb(items: list[dict], subscribe_category: str | None = None, lang: str = "uz"):
     from utils import item_code
 
     builder = InlineKeyboardBuilder()
     for item in items:
         builder.button(
-            text=f"🙋 #{item_code(item['id'])} — {item['region']}, {item['found_date']}",
+            text=f"🙋 #{item_code(item['id'])} — {region_label(item['region'], lang)}, {item['found_date']}",
             callback_data=f"claim:{item['id']}",
         )
     if subscribe_category:
-        builder.button(text="🔔 Topilsa xabar bering", callback_data=f"lostsub:{subscribe_category}")
+        builder.button(text=t("kb.subscribe", lang), callback_data=f"lostsub:{subscribe_category}")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def confirm_lost_kb():
+def confirm_lost_kb(lang: str = "uz"):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Saqlash", callback_data="lostform:save")
-    builder.button(text="❌ Bekor qilish", callback_data="lostform:cancel")
+    builder.button(text=t("kb.save", lang), callback_data="lostform:save")
+    builder.button(text=t("kb.cancel", lang), callback_data="lostform:cancel")
     return builder.as_markup()
 
 
-def lost_match_kb(item_id: int, report_id: int, post_url: str = ""):
+def lost_match_kb(item_id: int, report_id: int, post_url: str = "", lang: str = "uz"):
     builder = InlineKeyboardBuilder()
-    builder.button(text="🙋 Bu meniki", callback_data=f"claim:{item_id}")
+    builder.button(text=t("kb.claim", lang), callback_data=f"claim:{item_id}")
     if post_url:
-        builder.button(text="👀 Kanalda ko'rish", url=post_url)
-    builder.button(text="🔕 Qidiruvni to'xtatish", callback_data=f"lostclose:{report_id}")
+        builder.button(text=t("kb.view_channel", lang), url=post_url)
+    builder.button(text=t("kb.stop_search", lang), callback_data=f"lostclose:{report_id}")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def my_searches_kb(reports: list[dict]):
+def lookup_kb(item_id: int, post_url: str = "", own: bool = False, lang: str = "uz"):
+    """E'lon raqami bo'yicha topilgan e'lon: "Bu meniki" (yoki o'z e'loni bo'lsa — boshqarish)."""
+    builder = InlineKeyboardBuilder()
+    if own:
+        builder.button(text=t("kb.open_item", lang), callback_data=f"my:i:{item_id}")
+    else:
+        builder.button(text=t("kb.claim", lang), callback_data=f"claim:{item_id}")
+        if post_url:
+            builder.button(text=t("kb.view_channel", lang), url=post_url)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def my_searches_kb(reports: list[dict], lang: str = "uz"):
     from utils import lost_code
 
     builder = InlineKeyboardBuilder()
     for report in reports:
-        builder.button(text=f"🔕 #{lost_code(report['id'])} — to'xtatish", callback_data=f"lostclose:{report['id']}")
+        builder.button(
+            text=t("kb.stop_search_code", lang, code=lost_code(report["id"])), callback_data=f"lostclose:{report['id']}"
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def handover_kb(claim_id: int, role: str, lang: str = "uz"):
+    """role: "o" — egasi, "f" — topuvchi."""
+    builder = InlineKeyboardBuilder()
+    if role == "o":
+        builder.button(text=t("kb.owner_yes", lang), callback_data=f"ho:o:yes:{claim_id}")
+        builder.button(text=t("kb.owner_no", lang), callback_data=f"ho:o:no:{claim_id}")
+    else:
+        builder.button(text=t("kb.finder_yes", lang), callback_data=f"ho:f:yes:{claim_id}")
+        builder.button(text=t("kb.finder_no", lang), callback_data=f"ho:f:no:{claim_id}")
+    builder.button(text=t("kb.chat", lang), callback_data=f"chat:{claim_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ---------- Mening e'lonlarim ----------
+
+def my_list_kb(items: list[dict], claims: list[dict]):
+    from utils import item_code
+
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        builder.button(text=f"📦 #{item_code(item['id'])}", callback_data=f"my:i:{item['id']}")
+    for claim in claims:
+        builder.button(text=f"🙋 #{item_code(claim['item_id'])}", callback_data=f"my:c:{claim['id']}")
+    builder.adjust(3)
+    return builder.as_markup()
+
+
+def my_item_kb(item: dict, deal: dict | None, confirm: str = "", lang: str = "uz"):
+    """confirm: "ret" | "del" — shu amal uchun tasdiqlash tugmasi ko'rsatiladi."""
+    builder = InlineKeyboardBuilder()
+    item_id = item["id"]
+    if item["status"] in ("pending", "published"):
+        builder.button(text=t("kb.edit", lang), callback_data=f"my:edit:{item_id}")
+    if item["status"] == "published":
+        if confirm == "ret":
+            builder.button(text=t("kb.returned_confirm", lang), callback_data=f"my:ret2:{item_id}")
+        else:
+            builder.button(text=t("kb.returned", lang), callback_data=f"my:ret:{item_id}")
+    if item["status"] in ("pending", "published"):
+        if confirm == "del":
+            builder.button(text=t("kb.remove_confirm", lang), callback_data=f"my:del2:{item_id}")
+        else:
+            builder.button(text=t("kb.remove", lang), callback_data=f"my:del:{item_id}")
+    if deal and deal["handover"] is None and not deal["finder_answer"]:
+        builder.button(text=t("kb.finder_yes", lang), callback_data=f"ho:f:yes:{deal['id']}")
+        builder.button(text=t("kb.finder_no", lang), callback_data=f"ho:f:no:{deal['id']}")
+    if deal and deal["handover"] != "refunded":
+        builder.button(text=t("kb.chat_owner", lang), callback_data=f"chat:{deal['id']}")
+    builder.button(text=t("kb.back", lang), callback_data="my:list")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def my_claim_kb(claim: dict, online_payment: bool, lang: str = "uz"):
+    builder = InlineKeyboardBuilder()
+    if claim["status"] == "awaiting_payment":
+        text = t("kb.pay_online" if online_payment else "kb.pay_card", lang)
+        builder.button(text=text, callback_data=f"my:pay:{claim['id']}")
+    if claim["status"] == "completed" and claim["handover"] is None and not claim["owner_answer"]:
+        builder.button(text=t("kb.owner_yes", lang), callback_data=f"ho:o:yes:{claim['id']}")
+        builder.button(text=t("kb.owner_no", lang), callback_data=f"ho:o:no:{claim['id']}")
+    if claim["status"] == "completed" and claim["handover"] != "refunded":
+        builder.button(text=t("kb.chat_finder", lang), callback_data=f"chat:{claim['id']}")
+    builder.button(text=t("kb.back", lang), callback_data="my:list")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -235,23 +345,12 @@ def claim_undo_kb(claim_id: int):
     return builder.as_markup()
 
 
-def handover_kb(claim_id: int, role: str):
-    """role: "o" — egasi, "f" — topuvchi."""
-    builder = InlineKeyboardBuilder()
-    if role == "o":
-        builder.button(text="✅ Narsamni oldim", callback_data=f"ho:o:yes:{claim_id}")
-        builder.button(text="⚠️ Topuvchi bilan bog'lana olmayapman", callback_data=f"ho:o:no:{claim_id}")
-    else:
-        builder.button(text="✅ Egasiga topshirdim", callback_data=f"ho:f:yes:{claim_id}")
-        builder.button(text="⚠️ Egasi kelmadi / bog'lanmadi", callback_data=f"ho:f:no:{claim_id}")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def dispute_kb(claim_id: int):
+def dispute_kb(claim_id: int, chat_messages: int = 0):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Topshirildi — suyunchiga ruxsat", callback_data=f"hd:ok:{claim_id}")
     builder.button(text="↩️ Pul qaytarildi — yopish", callback_data=f"hd:refund:{claim_id}")
+    if chat_messages:
+        builder.button(text=f"💬 Yozishmani ko'rish ({chat_messages})", callback_data=f"hc:{claim_id}")
     builder.adjust(1)
     return builder.as_markup()
 
