@@ -13,6 +13,7 @@ from config import (
     ADMIN_GROUP_ID,
     BOT_TOKEN,
     CARD_NUMBER,
+    PAYMENT_PROVIDER_TOKEN,
     CHANNEL_ID,
     WEB_PORT,
     WEBHOOK_PATH,
@@ -29,7 +30,7 @@ def check_config() -> None:
             ("BOT_TOKEN", BOT_TOKEN),
             ("ADMIN_GROUP_ID", ADMIN_GROUP_ID),
             ("CHANNEL_ID", CHANNEL_ID),
-            ("CARD_NUMBER", CARD_NUMBER),
+            ("CARD_NUMBER", CARD_NUMBER or PAYMENT_PROVIDER_TOKEN),
         ]
         if not value
     ]

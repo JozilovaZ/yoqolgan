@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS lost_reports (
 MIGRATIONS = [
     "ALTER TABLE items ADD COLUMN latitude REAL",
     "ALTER TABLE items ADD COLUMN longitude REAL",
+    "ALTER TABLE items ADD COLUMN ocr_text TEXT",
+    "ALTER TABLE claims ADD COLUMN payment_charge_id TEXT",
 ]
 
 

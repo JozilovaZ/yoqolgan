@@ -1,14 +1,35 @@
 import logging
+from html import escape
 
 from aiogram import Bot
-from aiogram.types import BufferedInputFile, LinkPreviewOptions
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import BufferedInputFile, LabeledPrice, LinkPreviewOptions
 
 import database as db
-from config import CHANNEL_ID, CHANNEL_LINK
+from config import (
+    ADMIN_GROUP_ID,
+    ADMIN_USERNAME,
+    CARD_NUMBER,
+    CARD_OWNER,
+    CHANNEL_ID,
+    CHANNEL_LINK,
+    FINDER_SHARE,
+    PAYMENT_PROVIDER_TOKEN,
+    SERVICE_FEE,
+)
 from images import blurred_photo
 from keyboards import channel_post_kb, lost_match_kb
 from matching import is_match
-from utils import channel_post_text, is_document, lost_match_text, safe_send
+from utils import (
+    category_label,
+    channel_post_text,
+    is_document,
+    item_code,
+    lost_match_text,
+    money,
+    safe_send,
+    user_link,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,3 +89,114 @@ async def notify_lost_owners(bot: Bot, item: dict, message_id: int) -> None:
 
 def post_link(message_id: int) -> str:
     return f"{CHANNEL_LINK}/{message_id}" if CHANNEL_LINK else ""
+
+
+# ---------- to'lov ----------
+
+async def request_payment(bot: Bot, claim: dict, item: dict) -> None:
+    """Egasi tasdiqlangach to'lov so'raladi: onlayn (Click/Payme) yoki karta + chek."""
+    code = item_code(item["id"])
+    text = (
+        f"🎉 <b>Tabriklaymiz!</b> #{code} — {category_label(item['category'])} sizniki ekanligi tasdiqlandi.\n\n"
+        f"Topuvchi bilan bog'lanish uchun xizmat haqini to'lang: <b>{money(SERVICE_FEE)} so'm</b>\n"
+        f"🎁 Shundan {FINDER_SHARE}% narsangizni topgan insonga suyunchi sifatida beriladi.\n\n"
+    )
+    if PAYMENT_PROVIDER_TOKEN:
+        try:
+            await bot.send_invoice(
+                claim["owner_id"],
+                title=f"Xizmat haqi #{code}",
+                description=f"{category_label(item['category'])} topgan inson bilan bog'lanish",
+                payload=f"claim:{claim['id']}",
+                provider_token=PAYMENT_PROVIDER_TOKEN,
+                currency="UZS",
+                prices=[LabeledPrice(label="Xizmat haqi", amount=SERVICE_FEE * 100)],  # tiyinda
+            )
+            await safe_send(
+                bot,
+                claim["owner_id"],
+                text + "💳 Yuqoridagi <b>«To'lash»</b> tugmasini bosing — to'lov tushishi bilan "
+                "topuvchining kontaktini darhol yuboraman.",
+            )
+            return
+        except TelegramAPIError as error:
+            logger.error("Invoice yuborilmadi, karta orqali to'lovga o'tildi: %s", error)
+
+    await safe_send(
+        bot,
+        claim["owner_id"],
+        text + f"💳 Karta: <code>{escape(CARD_NUMBER)}</code>\n"
+        f"👤 {escape(CARD_OWNER)}\n\n"
+        "📸 To'lovdan so'ng <b>chek skrinshotini shu yerga yuboring.</b>",
+    )
+
+
+async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "") -> None:
+    """To'lov tasdiqlangach: ikki tomonga kontakt, kanal posti yangilanadi, adminga suyunchi eslatmasi.
+
+    charge_id — onlayn to'lov bo'lsa, to'lov tizimidagi ID si.
+    """
+    code = item_code(item["id"])
+    await db.update_claim(claim["id"], status="completed")
+    await db.update_item(item["id"], status="returned")
+    await db.close_owner_lost_reports(claim["owner_id"], item["category"])
+    share = SERVICE_FEE * FINDER_SHARE // 100
+
+    # Egasiga topuvchining kontakti
+    await safe_send(
+        bot,
+        claim["owner_id"],
+        f"✅ <b>To'lov tasdiqlandi!</b>\n\n"
+        f"#{code} — {category_label(item['category'])} topgan inson bilan bog'laning:\n\n"
+        f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
+        f"📞 <b>{escape(item['finder_phone'] or '')}</b>\n\n"
+        "Narsangizni olishda omad! 🍀",
+    )
+
+    # Topuvchiga egasining kontakti
+    finder_text = (
+        f"🎉 <b>#{code} e'loningiz egasi topildi!</b>\n\n"
+        f"👤 {user_link(claim['owner_id'], claim['owner_name'], claim['owner_username'])}\n"
+        f"📞 <b>{escape(claim['owner_phone'] or '')}</b>\n\n"
+        "U siz bilan bog'lanadi. Narsani topshirishda shaxsini tekshirib oling.\n\n"
+        f"🎁 Suyunchi: <b>{money(share)} so'm</b> "
+    )
+    if item["finder_card"]:
+        finder_text += f"kartangizga ({escape(item['finder_card'])}) o'tkaziladi."
+    else:
+        finder_text += "— olish uchun karta raqamingizni adminga yuboring"
+        finder_text += f": {ADMIN_USERNAME}." if ADMIN_USERNAME else "."
+    finder_text += "\n\nYaxshilik qilganingiz uchun rahmat! 🙏"
+    await safe_send(bot, item["finder_id"], finder_text)
+
+    # Kanaldagi postni yangilash
+    returned_text = channel_post_text(item, returned=True)
+    try:
+        if item["publish_mode"] in ("photo", "blur"):
+            await bot.edit_message_caption(
+                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=returned_text, reply_markup=None
+            )
+        else:
+            await bot.edit_message_text(
+                returned_text,
+                chat_id=CHANNEL_ID,
+                message_id=item["channel_msg_id"],
+                reply_markup=None,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+    except TelegramAPIError as error:
+        logger.warning("Kanal posti yangilanmadi: %s", error)
+
+    admin_text = ""
+    if charge_id:
+        admin_text = (
+            f"💳 <b>Onlayn to'lov qabul qilindi</b> | murojaat №{claim['id']}\n"
+            f"To'lov ID: <code>{escape(charge_id)}</code>\nIkki tomon avtomatik bog'landi ✅\n\n"
+        )
+    admin_text += (
+        f"💸 <b>Suyunchi o'tkazish kerak</b> | #{code}\n\n"
+        f"Summa: <b>{money(share)} so'm</b>\n"
+        f"Kimga: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
+        f"Karta: <code>{escape(item['finder_card'] or 'kiritilmagan')}</code>"
+    )
+    await safe_send(bot, ADMIN_GROUP_ID, admin_text)

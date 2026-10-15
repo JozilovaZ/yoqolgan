@@ -217,6 +217,12 @@ def claim_review_kb(claim_id: int):
     return builder.as_markup()
 
 
+def claim_undo_kb(claim_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="↩️ Bekor qilish (egasi emas)", callback_data=f"cl:undo:{claim_id}")
+    return builder.as_markup()
+
+
 def payment_review_kb(claim_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ To'lov tushdi", callback_data=f"pay:ok:{claim_id}")

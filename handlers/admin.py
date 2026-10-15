@@ -5,13 +5,13 @@ from html import escape
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
+from aiogram.types import CallbackQuery, Message
 
 import database as db
-from config import ADMIN_GROUP_ID, ADMIN_USERNAME, CARD_NUMBER, CARD_OWNER, CHANNEL_ID, FINDER_SHARE, SERVICE_FEE
+from config import ADMIN_GROUP_ID, ADMIN_USERNAME, CHANNEL_ID
 from keyboards import moderation_kb, published_kb
-from services import post_link, publish_item
-from utils import category_label, channel_post_text, item_code, item_details, money, safe_send, user_link
+from services import complete_claim, post_link, publish_item, request_payment
+from utils import item_code, item_details, safe_send
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,25 @@ async def moderate_item(callback: CallbackQuery, bot: Bot):
 
 # ---------- 2. Egasining isbotini tekshirish ----------
 
+@router.callback_query(F.data.startswith("cl:undo:"))
+async def undo_auto_approval(callback: CallbackQuery, bot: Bot):
+    """OCR avtomatik tasdiqlagan murojaatni admin bekor qiladi (to'lovdan oldin)."""
+    claim = await db.get_claim(int(callback.data.split(":")[2]))
+    if not claim or claim["status"] != "awaiting_payment":
+        await callback.answer("Bekor qilib bo'lmaydi: to'lov qilingan yoki murojaat yopilgan", show_alert=True)
+        return
+    await db.update_claim(claim["id"], status="rejected")
+    await _mark_done(callback, "↩️ Avtomatik tasdiq bekor qilindi")
+    text = (
+        f"😔 #{item_code(claim['item_id'])} e'loni bo'yicha murojaatingiz admin tomonidan qayta ko'rib chiqildi "
+        "va tasdiqlanmadi. Iltimos, to'lov qilmang."
+    )
+    if ADMIN_USERNAME:
+        text += f"\nXato deb o'ylasangiz: {ADMIN_USERNAME}"
+    await safe_send(bot, claim["owner_id"], text)
+    await callback.answer("Bekor qilindi")
+
+
 @router.callback_query(F.data.startswith("cl:"))
 async def review_claim(callback: CallbackQuery, bot: Bot):
     _, action, claim_id = callback.data.split(":")
@@ -145,17 +164,7 @@ async def review_claim(callback: CallbackQuery, bot: Bot):
 
     await db.update_claim(claim["id"], status="awaiting_payment")
     await _mark_done(callback, "✅ Egasi tasdiqlandi, to'lov kutilmoqda")
-    await safe_send(
-        bot,
-        claim["owner_id"],
-        f"🎉 <b>Tabriklaymiz!</b> #{code} — {category_label(item['category'])} sizniki ekanligi tasdiqlandi.\n\n"
-        f"Topuvchi bilan bog'lanish uchun xizmat haqini to'lang:\n\n"
-        f"💰 Summa: <b>{money(SERVICE_FEE)} so'm</b>\n"
-        f"💳 Karta: <code>{escape(CARD_NUMBER)}</code>\n"
-        f"👤 {escape(CARD_OWNER)}\n\n"
-        f"🎁 Shundan {FINDER_SHARE}% narsangizni topgan insonga suyunchi sifatida beriladi.\n\n"
-        "📸 To'lovdan so'ng <b>chek skrinshotini shu yerga yuboring.</b>",
-    )
+    await request_payment(bot, claim, item)
     await callback.answer("Tasdiqlandi ✅")
 
 
@@ -185,62 +194,6 @@ async def review_payment(callback: CallbackQuery, bot: Bot):
         await callback.answer("Egasiga xabar berildi")
         return
 
-    await db.update_claim(claim["id"], status="completed")
-    await db.update_item(item["id"], status="returned")
-    await db.close_owner_lost_reports(claim["owner_id"], item["category"])
-    share = SERVICE_FEE * FINDER_SHARE // 100
-
-    # Egasiga topuvchining kontakti
-    await safe_send(
-        bot,
-        claim["owner_id"],
-        f"✅ <b>To'lov tasdiqlandi!</b>\n\n"
-        f"#{code} — {category_label(item['category'])} topgan inson bilan bog'laning:\n\n"
-        f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
-        f"📞 <b>{escape(item['finder_phone'] or '')}</b>\n\n"
-        "Narsangizni olishda omad! 🍀",
-    )
-
-    # Topuvchiga egasining kontakti
-    finder_text = (
-        f"🎉 <b>#{code} e'loningiz egasi topildi!</b>\n\n"
-        f"👤 {user_link(claim['owner_id'], claim['owner_name'], claim['owner_username'])}\n"
-        f"📞 <b>{escape(claim['owner_phone'] or '')}</b>\n\n"
-        "U siz bilan bog'lanadi. Narsani topshirishda shaxsini tekshirib oling.\n\n"
-        f"🎁 Suyunchi: <b>{money(share)} so'm</b> "
-    )
-    if item["finder_card"]:
-        finder_text += f"kartangizga ({escape(item['finder_card'])}) o'tkaziladi."
-    else:
-        finder_text += "— olish uchun karta raqamingizni adminga yuboring"
-        finder_text += f": {ADMIN_USERNAME}." if ADMIN_USERNAME else "."
-    finder_text += "\n\nYaxshilik qilganingiz uchun rahmat! 🙏"
-    await safe_send(bot, item["finder_id"], finder_text)
-
-    # Kanaldagi postni yangilash
-    returned_text = channel_post_text(item, returned=True)
-    try:
-        if item["publish_mode"] in ("photo", "blur"):
-            await bot.edit_message_caption(
-                chat_id=CHANNEL_ID, message_id=item["channel_msg_id"], caption=returned_text, reply_markup=None
-            )
-        else:
-            await bot.edit_message_text(
-                returned_text,
-                chat_id=CHANNEL_ID,
-                message_id=item["channel_msg_id"],
-                reply_markup=None,
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-    except TelegramAPIError as error:
-        logger.warning("Kanal posti yangilanmadi: %s", error)
-
     await _mark_done(callback, "✅ To'lov tasdiqlandi, ikki tomon bog'landi")
-    await bot.send_message(
-        ADMIN_GROUP_ID,
-        f"💳 <b>Suyunchi o'tkazish kerak</b> | #{code}\n\n"
-        f"Summa: <b>{money(share)} so'm</b>\n"
-        f"Kimga: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
-        f"Karta: <code>{escape(item['finder_card'] or 'kiritilmagan')}</code>",
-    )
+    await complete_claim(bot, claim, item)
     await callback.answer("Bog'landi ✅")

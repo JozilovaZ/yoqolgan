@@ -12,8 +12,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, User
 
 import database as db
-from config import ADMIN_GROUP_ID
-from keyboards import cancel_kb, claim_review_kb, main_menu, payment_review_kb, phone_kb
+from config import ADMIN_GROUP_ID, AUTO_VERIFY_DOCUMENTS, PAYMENT_PROVIDER_TOKEN
+from keyboards import cancel_kb, claim_review_kb, claim_undo_kb, main_menu, payment_review_kb, phone_kb
+from services import request_payment
+from verify import verify_document_claim
 from utils import category_label, cut, is_document, item_code, item_details, user_link
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,11 @@ async def start_claim(message: Message, state: FSMContext, item_id: int, user: U
     open_claim = await db.get_open_claim(user.id, item_id)
     if open_claim:
         if open_claim["status"] == "awaiting_payment":
-            text = "Siz bu narsa uchun allaqachon tasdiqlangansiz. To'lov chekini (skrinshot) shu yerga yuboring 📸"
+            if PAYMENT_PROVIDER_TOKEN:
+                # To'lov oynasini qaytadan yuboramiz
+                await request_payment(message.bot, open_claim, item)
+                return
+            text ="Siz bu narsa uchun allaqachon tasdiqlangansiz. To'lov chekini (skrinshot) shu yerga yuboring 📸"
         else:
             text = "Murojaatingiz ko'rib chiqilmoqda. Iltimos, kuting ⏳"
         await message.answer(text, reply_markup=main_menu())
@@ -118,19 +124,46 @@ async def _finish_claim(message: Message, state: FSMContext, bot: Bot, phone: st
         }
     )
 
-    caption = (
-        f"🙋 <b>EGASI MUROJAAT QILDI</b> | murojaat №{claim_id}\n\n"
+    # Hujjat bo'lsa — avval OCR bilan o'zimiz tekshiramiz
+    verdict = None
+    if AUTO_VERIFY_DOCUMENTS and is_document(item["category"]):
+        wait = await message.answer("⏳ Ma'lumotlaringiz hujjat bilan solishtirilmoqda...")
+        verdict = await verify_document_claim(bot, item, data["proof"])
+        await wait.delete()
+
+    details = (
         f"{item_details(item)}\n\n"
         f"━━━━━━━━━━\n"
         f"👤 Egasi: {user_link(user.id, user.full_name, user.username)}\n"
         f"📞 {escape(phone)}\n"
-        f"🔐 Isboti: <i>{escape(cut(data['proof'], 300))}</i>\n\n"
-        "Rasm bilan solishtiring va qaror qiling 👇"
+        f"🔐 Isboti: <i>{escape(cut(data['proof'], 300))}</i>"
     )
+    if verdict:
+        details += f"\n\n{verdict.summary()}"
+
+    approved = verdict is not None and verdict.approved
+    if approved:
+        await db.update_claim(claim_id, status="awaiting_payment")
+        caption = (
+            f"🤖 <b>AVTOMATIK TASDIQLANDI</b> | murojaat №{claim_id}\n\n{details}\n\n"
+            "Egasidan to'lov so'raldi. Xato bo'lsa, to'lovdan oldin bekor qiling 👇"
+        )
+        keyboard = claim_undo_kb(claim_id)
+    else:
+        caption = (
+            f"🙋 <b>EGASI MUROJAAT QILDI</b> | murojaat №{claim_id}\n\n{details}\n\n"
+            "Rasm bilan solishtiring va qaror qiling 👇"
+        )
+        keyboard = claim_review_kb(claim_id)
     try:
-        await bot.send_photo(ADMIN_GROUP_ID, item["photo_id"], caption=caption, reply_markup=claim_review_kb(claim_id))
+        await bot.send_photo(ADMIN_GROUP_ID, item["photo_id"], caption=caption, reply_markup=keyboard)
     except TelegramAPIError as error:
         logger.error("Admin guruhga yuborilmadi: %s", error)
+
+    if approved:
+        await message.answer("✅ Ma'lumotlaringiz hujjat bilan mos keldi!", reply_markup=main_menu())
+        await request_payment(bot, await db.get_claim(claim_id), item)
+        return
 
     await message.answer(
         "✅ Murojaatingiz adminga yuborildi.\n"

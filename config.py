@@ -33,6 +33,14 @@ FINDER_SHARE = int(os.getenv("FINDER_SHARE", "50"))  # topuvchiga beriladigan fo
 CARD_NUMBER = os.getenv("CARD_NUMBER", "")
 CARD_OWNER = os.getenv("CARD_OWNER", "")
 
+# Onlayn to'lov (Click/Payme): @BotFather -> Bot -> Payments dan olingan token.
+# To'ldirilsa egasi bot ichida to'laydi va to'lov avtomatik tasdiqlanadi.
+# Bo'sh bo'lsa — karta raqami + chek skrinshoti (admin tekshiradi).
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
+
+# true: hujjat egasining javobi OCR bilan tekshiriladi, mos kelsa admin'siz tasdiqlanadi
+AUTO_VERIFY_DOCUMENTS = os.getenv("AUTO_VERIFY_DOCUMENTS", "true").lower() == "true"
+
 # true: e'lon darhol kanalga chiqadi, admin keyin o'chira oladi
 # false: avval admin tasdiqlaydi
 AUTO_PUBLISH = os.getenv("AUTO_PUBLISH", "true").lower() == "true"
