@@ -6,7 +6,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 import database as db
-from utils import CLAIM_STATUSES, ITEM_STATUSES, category_label, item_code, local_time, lost_code
+from utils import CLAIM_STATUSES, HANDOVER_STATUSES, ITEM_STATUSES, category_label, item_code, local_time, lost_code
 
 HEADER_FILL = PatternFill("solid", fgColor="DDE7F0")
 
@@ -51,11 +51,12 @@ async def build_export() -> bytes:
     _sheet(
         workbook,
         "Murojaatlar",
-        ["Murojaat", "E'lon", "Holati", "Egasi", "Username", "Telefon",
+        ["Murojaat", "E'lon", "Holati", "Topshirish", "Egasi", "Username", "Telefon",
          "To'lov ID", "Suyunchi o'tkazildi", "Berilgan"],
         [
             [
                 c["id"], f"#{item_code(c['item_id'])}", CLAIM_STATUSES.get(c["status"], c["status"]),
+                HANDOVER_STATUSES.get(c["handover"], "") if c["status"] == "completed" else "",
                 c["owner_name"], c["owner_username"], c["owner_phone"],
                 c["payment_charge_id"], local_time(c["payout_at"]) if c["payout_at"] else "",
                 local_time(c["created_at"]),
@@ -83,9 +84,13 @@ async def build_export() -> bytes:
     _sheet(
         workbook,
         "Foydalanuvchilar",
-        ["ID", "Ism", "Username", "Bloklangan", "Qo'shilgan"],
+        ["ID", "Ism", "Username", "Bloklangan", "Ofertaga rozi (tahrir)", "Rozilik vaqti", "Qo'shilgan"],
         [
-            [u["user_id"], u["full_name"], u["username"], "⛔ Ha" if u["banned"] else "", local_time(u["created_at"])]
+            [
+                u["user_id"], u["full_name"], u["username"], "⛔ Ha" if u["banned"] else "",
+                u["terms_version"] or "", local_time(u["terms_accepted_at"]) if u["terms_accepted_at"] else "",
+                local_time(u["created_at"]),
+            ]
             for u in users
         ],
     )

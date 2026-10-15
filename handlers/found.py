@@ -33,6 +33,7 @@ from keyboards import (
     skip_kb,
 )
 from services import default_mode, post_link, publish_item
+from consent import require_terms
 from verify import prepare_document
 from utils import category_label, cut, day_text, is_document, item_code, item_details, location_text, money
 
@@ -62,6 +63,9 @@ class FoundForm(StatesGroup):
 
 @router.message(StateFilter(None), F.text == BTN_FOUND)
 async def start_found(message: Message, state: FSMContext):
+    # message.chat.id — shaxsiy chatda foydalanuvchi ID si (rozilikdan keyin message botniki bo'ladi)
+    if not await require_terms(message, message.chat.id, "found"):
+        return
     await state.set_state(FoundForm.category)
     await message.answer(
         "Rahmat, siz yaxshi ish qilyapsiz! 🙌\nBir nechta savolga javob bering.",

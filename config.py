@@ -24,6 +24,9 @@ CHANNEL_LINK = os.getenv("CHANNEL_LINK", "")
 if not CHANNEL_LINK and isinstance(CHANNEL_ID, str) and CHANNEL_ID.startswith("@"):
     CHANNEL_LINK = f"https://t.me/{CHANNEL_ID[1:]}"
 
+# Ixtiyoriy: ofertaning internetdagi havolasi (masalan, telegra.ph sahifa). Bo'sh bo'lsa — matn botning o'zida
+OFFER_URL = os.getenv("OFFER_URL", "")
+
 # Savollar uchun admin username (masalan: @admin)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
 
@@ -46,9 +49,19 @@ PAYMENT_REMIND_HOURS = int(os.getenv("PAYMENT_REMIND_HOURS", "24"))
 PAYMENT_EXPIRE_HOURS = int(os.getenv("PAYMENT_EXPIRE_HOURS", "48"))
 # Murojaat shuncha soat tekshirilmasa — admin guruhga eslatma
 ADMIN_REMIND_HOURS = int(os.getenv("ADMIN_REMIND_HOURS", "3"))
+# To'lovdan shuncha soat o'tib ikki tomondan "narsa topshirildimi?" deb so'raladi,
+# yana shuncha soat egasi javob bermasa — admin guruhga xabar
+HANDOVER_ASK_HOURS = int(os.getenv("HANDOVER_ASK_HOURS", "24"))
+HANDOVER_ESCALATE_HOURS = int(os.getenv("HANDOVER_ESCALATE_HOURS", "48"))
 
 # Yopilgan e'lon va murojaatlardagi shaxsiy ma'lumotlar (telefon, karta, isbot) shuncha kundan keyin o'chiriladi
 DATA_RETENTION_DAYS = int(os.getenv("DATA_RETENTION_DAYS", "90"))
+
+# Baza zaxirasi: har kuni shu soatda (mahalliy vaqt) Telegram'ga fayl bo'lib yuboriladi.
+# Qayerga: bo'sh bo'lsa — admin guruhga; "off" — o'chirilgan
+_backup_chat = os.getenv("BACKUP_CHAT_ID", "").strip()
+BACKUP_CHAT_ID = None if _backup_chat.lower() == "off" else (_chat_id(_backup_chat) if _backup_chat else ADMIN_GROUP_ID)
+BACKUP_HOUR = int(os.getenv("BACKUP_HOUR", "3"))
 
 # true: e'lon darhol kanalga chiqadi, admin keyin o'chira oladi
 # false: avval admin tasdiqlaydi

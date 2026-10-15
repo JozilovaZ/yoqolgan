@@ -1,0 +1,4 @@
+# Faqat ishlab chiqish uchun (testlar). Serverga kerak emas.
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.24.0

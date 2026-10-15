@@ -18,6 +18,14 @@ Narsasini yo'qotgan odam **"Narsa yo'qotdim"** bo'limida turini tanlaydi va oxir
 
 Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtiradi (`matching.py`). Turi bir xil, viloyati mos (ikkalasida ham ko'rsatilgan bo'lsa) va yo'qotilgan kundan keyin 60 kun ichida topilgan bo'lsa, egasiga **"🙋 Bu meniki"** tugmasi bilan xabar boradi. Qidiruvlarni **"🔔 Qidiruvlarim"** bo'limida ko'rish va to'xtatish mumkin. Narsa egasiga qaytarilsa, qidiruv avtomatik yopiladi.
 
+### Narsa qo'lga tekkanini tasdiqlash (`handlers/handover.py`)
+
+To'lovdan so'ng egasi **"✅ Narsamni oldim"**, topuvchi **"✅ Egasiga topshirdim"** tugmasini oladi. **Suyunchi faqat egasi tasdiqlagach** so'raladi (admin guruhga "💸 Suyunchi o'tkazish kerak" xabari va `/payouts`).
+
+- 24 soatda javob bo'lmasa, bot javob bermagan tomondan o'zi so'raydi. Yana 48 soatda egasi javob bermasa, adminga xabar boradi.
+- "⚠️ bog'lana olmayapman" bosilsa, adminga **nizo** xabari boradi: ikkala tomon kontakti va **"✅ Topshirildi"** (suyunchiga ruxsat) yoki **"↩️ Pul qaytarildi"** (suyunchi berilmaydi, tushumdan chiqariladi) tugmalari.
+- `/stats` da "topshirilishi kutilmoqda" va "nizolar" soni ko'rinadi.
+
 ### Eslatmalar va maxfiylik (`scheduler.py`, har 15 daqiqada)
 
 - Egasi tasdiqlangandan keyin **24 soat** to'lamasa, eslatma oladi. **48 soatda** murojaat yopiladi va narsa boshqalar uchun yana ochiladi.
@@ -28,6 +36,15 @@ Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtirad
 Muddatlarni `.env` da o'zgartirish mumkin: `PAYMENT_REMIND_HOURS`, `PAYMENT_EXPIRE_HOURS`, `ADMIN_REMIND_HOURS`, `DATA_RETENTION_DAYS`.
 
 > Admin guruhdagi rasmlar Telegram'da saqlanadi, bot ularni o'chira olmaydi. Guruh sozlamalarida **"Xabarlarni avtomatik o'chirish"** ni (masalan, 1 oy) yoqing.
+
+### Ommaviy oferta (`OFERTA.md`)
+
+Foydalanuvchi birinchi marta e'lon bermoqchi, murojaat qilmoqchi yoki qidiruv ochmoqchi bo'lganda bot shartlarning qisqa mazmunini ko'rsatadi va **"✅ Roziman"** ni so'raydi. Rozilikdan keyin foydalanuvchi to'xtagan joyidan davom etadi. To'liq matn: `/oferta`.
+
+- **Ishga tushirishdan oldin** `OFERTA.md` dagi `[...]` joylarni (F.I.Sh./MChJ, STIR, manzil, hisob raqam, telefon) to'ldiring va matnni yuristga ko'rsating.
+- `{fee}` kabi joylarga bot `.env` dagi qiymatlarni o'zi qo'yadi (xizmat haqi, suyunchi foizi, muddatlar).
+- Matnni o'zgartirsangiz, birinchi qatordagi `Tahrir:` sanasini yangilang. Shunda bot hammadan rozilikni qaytadan so'raydi.
+- Click/Payme oferta **havolasini** so'rasa: matnni telegra.ph sahifasiga joylab, havolani `.env` dagi `OFFER_URL` ga yozing.
 
 ### Onlayn to'lovni ulash (Click / Payme)
 
@@ -46,6 +63,29 @@ Avval **test** tokeni bilan sinab ko'ring (BotFather ikkalasini ham beradi).
 5. `.env.example` faylidan nusxa olib, nomini `.env` qiling va tokenni yozing.
 6. Botni ishga tushiring: `python main.py`
 7. Admin guruhda `/id` yozing. Chiqqan Chat ID ni `.env` dagi `ADMIN_GROUP_ID` ga yozing va botni qayta ishga tushiring.
+
+## Testlar
+
+Har bir o'zgarishdan keyin (ayniqsa serverga yuklashdan oldin) testlarni ishga tushiring:
+
+```bash
+pip install -r requirements-dev.txt   # bir marta
+pytest                                # ~5 soniya
+pytest -m ocr                         # + haqiqiy OCR testi (sekin, ~30 soniya)
+```
+
+Testlar haqiqiy bot kodini aiogram Dispatcher orqali ishlatadi, lekin Telegram'ga hech narsa yuborilmaydi (`tests/fakes.py`) va har bir test alohida bo'sh bazada ishlaydi. `.env` dagi sozlamalar testlarga ta'sir qilmaydi.
+
+| Fayl | Nimani tekshiradi |
+|---|---|
+| `test_flows.py` | "Yo'qotdim" e'loni, mos narsa chiqqanda xabar, hujjatni avtomatik tasdiqlash, onlayn to'lov |
+| `test_handover.py` | Narsa topshirilishini tasdiqlash, nizolar, suyunchi faqat tasdiqdan keyin |
+| `test_panel.py` | Admin panel: `/find`, ban, `/payouts`, `/export`, `/broadcast` |
+| `test_stats.py` | `/stats` tugmalari, grafik, matn va grafik raqamlari bir xilligi |
+| `test_scheduler.py` | Eslatmalar, muddati o'tganlarni yopish |
+| `test_database.py` | Eski bazadan ko'chish, shaxsiy ma'lumotlarni tozalash |
+| `test_backup_alerts.py` | Zaxira nusxa, xatolar haqida adminga xabar |
+| `test_verify.py`, `test_matching.py` | OCR tekshiruvi, yo'qotilgan va topilganni moslashtirish |
 
 ## Serverga joylash
 
@@ -66,6 +106,7 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 | `/ban`, `/unban` | admin guruh | `/ban @username sabab` — bloklangan foydalanuvchi botdan foydalana olmaydi |
 | `/broadcast` | admin guruh | Guruhdagi xabarga **reply** qilib yozing — barcha foydalanuvchilarga yuboriladi |
 | `/pending` | admin guruh | Kanalga chiqmay qolgan e'lonlar |
+| `/backup` | admin guruh | Bazaning zaxira nusxasi (har kuni soat 03:00 da avtomatik ham keladi) |
 
 ## Fayllar
 

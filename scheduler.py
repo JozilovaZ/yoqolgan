@@ -1,20 +1,27 @@
 """Fonda muntazam ishlaydigan vazifalar: eslatmalar, muddati o'tganlarni yopish, eski ma'lumotlarni tozalash."""
 import asyncio
 import logging
+from datetime import datetime
 
 from aiogram import Bot
 
 import database as db
+from alerts import report_error
+from backup import send_backup
 from config import (
     ADMIN_GROUP_ID,
     ADMIN_REMIND_HOURS,
+    BACKUP_CHAT_ID,
+    BACKUP_HOUR,
     DATA_RETENTION_DAYS,
+    HANDOVER_ASK_HOURS,
+    HANDOVER_ESCALATE_HOURS,
     PAYMENT_EXPIRE_HOURS,
     PAYMENT_REMIND_HOURS,
 )
-from keyboards import BTN_LOST
+from keyboards import BTN_LOST, handover_kb
 from matching import MATCH_DAYS
-from services import request_payment
+from services import report_dispute, request_payment
 from utils import category_label, item_code, lost_code, safe_send
 
 logger = logging.getLogger(__name__)
@@ -73,6 +80,37 @@ async def remind_admins(bot: Bot) -> None:
         await db.update_claim(claim["id"], admin_reminded=1)
 
 
+async def ask_handover(bot: Bot) -> None:
+    """To'lovdan HANDOVER_ASK_HOURS o'tdi, egasi hali "oldim" demadi — ikkala tomondan so'raymiz."""
+    for claim in await db.list_handovers_to_ask(HANDOVER_ASK_HOURS):
+        await db.mark_handover_asked(claim["id"])
+        item = await db.get_item(claim["item_id"])
+        code = item_code(item["id"])
+        if not claim["owner_answer"]:
+            await safe_send(
+                bot,
+                claim["owner_id"],
+                f"📦 #{code} — {category_label(item['category'])}: <b>narsangizni oldingizmi?</b>",
+                reply_markup=handover_kb(claim["id"], "o"),
+            )
+        if not claim["finder_answer"]:
+            await safe_send(
+                bot,
+                item["finder_id"],
+                f"📦 #{code}: <b>narsani egasiga topshirdingizmi?</b>\n"
+                "Suyunchi topshirilgani tasdiqlangach o'tkaziladi.",
+                reply_markup=handover_kb(claim["id"], "f"),
+            )
+
+
+async def escalate_handover(bot: Bot) -> None:
+    """So'raldi, lekin egasi baribir javob bermadi — admin hal qiladi."""
+    hours = HANDOVER_ASK_HOURS + HANDOVER_ESCALATE_HOURS
+    for claim in await db.list_handovers_to_escalate(HANDOVER_ESCALATE_HOURS):
+        await db.update_claim(claim["id"], handover_escalated=1)
+        await report_dispute(bot, claim["id"], f"⏳ Egasi narsani olganini {hours} soatdan beri tasdiqlamadi.")
+
+
 async def close_outdated_lost_reports(bot: Bot) -> None:
     """Yo'qotilganiga MATCH_DAYS kun bo'lgan qidiruvlarga endi mos narsa chiqmaydi — yopiladi."""
     for report in await db.list_outdated_lost_reports(MATCH_DAYS):
@@ -85,14 +123,33 @@ async def close_outdated_lost_reports(bot: Bot) -> None:
         )
 
 
+async def daily_backup(bot: Bot) -> None:
+    """Kuniga bir marta, BACKUP_HOUR dan keyin. Sana bazada saqlanadi — qayta ishga tushsa takrorlanmaydi."""
+    now = datetime.now()
+    if not BACKUP_CHAT_ID or now.hour < BACKUP_HOUR or await db.get_meta("last_backup") == now.date().isoformat():
+        return
+    await send_backup(bot)
+    await db.set_meta("last_backup", now.date().isoformat())
+
+
 async def purge_personal_data(bot: Bot) -> None:
     counts = await db.purge_personal_data(DATA_RETENTION_DAYS)
     if any(counts.values()):
         logger.info("Eski shaxsiy ma'lumotlar tozalandi: %s", counts)
 
 
-# Tartib muhim: avval muddati o'tganlar yopiladi, keyin eslatma — yopiladigan murojaatga eslatma bormasin
-JOBS = [expire_unpaid_claims, remind_unpaid_claims, remind_admins, close_outdated_lost_reports, purge_personal_data]
+# Tartib muhim: avval muddati o'tganlar yopiladi, keyin eslatma — yopiladigan murojaatga eslatma bormasin.
+# Xuddi shunday: avval adminga xabar (escalate), keyin so'rash — so'rov va xabar bir vaqtda ketmasin
+JOBS = [
+    expire_unpaid_claims,
+    remind_unpaid_claims,
+    remind_admins,
+    escalate_handover,
+    ask_handover,
+    close_outdated_lost_reports,
+    purge_personal_data,
+    daily_backup,
+]
 
 
 async def run_scheduler(bot: Bot) -> None:
@@ -100,6 +157,7 @@ async def run_scheduler(bot: Bot) -> None:
         for job in JOBS:
             try:
                 await job(bot)
-            except Exception:  # bitta vazifadagi xato boshqalarini to'xtatmasin
+            except Exception as error:  # bitta vazifadagi xato boshqalarini to'xtatmasin
                 logger.exception("Fon vazifasi xato berdi: %s", job.__name__)
+                await report_error(bot, f"fon vazifasi: {job.__name__}", error)
         await asyncio.sleep(CHECK_INTERVAL)

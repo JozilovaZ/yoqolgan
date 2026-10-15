@@ -14,6 +14,7 @@ from aiogram.types import Message, User
 import database as db
 from config import ADMIN_GROUP_ID, AUTO_VERIFY_DOCUMENTS, PAYMENT_PROVIDER_TOKEN
 from keyboards import cancel_kb, claim_review_kb, claim_undo_kb, main_menu, payment_review_kb, phone_kb
+from consent import require_terms
 from services import request_payment
 from verify import verify_document_claim
 from utils import category_label, cut, is_document, item_code, item_details, user_link
@@ -52,6 +53,9 @@ async def start_claim(message: Message, state: FSMContext, item_id: int, user: U
         else:
             text = "Murojaatingiz ko'rib chiqilmoqda. Iltimos, kuting ⏳"
         await message.answer(text, reply_markup=main_menu())
+        return
+
+    if not await require_terms(message, user.id, f"claim_{item_id}"):
         return
 
     await state.set_state(ClaimForm.proof)

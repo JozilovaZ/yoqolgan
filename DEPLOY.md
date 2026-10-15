@@ -138,7 +138,19 @@ docker compose cp bot:/app/data/bot.db ./backup-$(date +%F).db
 docker compose cp ./bot.db bot:/app/data/bot.db && docker compose restart bot
 ```
 
-Har kuni avtomatik zaxira (soat 03:00):
+**Telegram'ga avtomatik zaxira (tavsiya):** bot har kuni soat 03:00 da bazani siqilgan fayl (`.db.gz`) qilib admin guruhga yuboradi. Alohida yopiq kanalga yuborish uchun `.env` ga `BACKUP_CHAT_ID=-100...` yozing (botni kanalga admin qiling). Qo'lda olish: admin guruhda `/backup`.
+
+### Zaxiradan tiklash
+
+```bash
+# 1. Telegram'dan izla-backup-....db.gz faylini serverga yuklang (masalan, scp bilan), keyin:
+gunzip izla-backup-2026-10-15-0300.db.gz
+docker compose stop bot
+docker compose cp izla-backup-2026-10-15-0300.db bot:/app/data/bot.db
+docker compose start bot
+```
+
+Serverda ham zaxira (cron, soat 03:00):
 ```bash
 crontab -e
 # Qo'shing:

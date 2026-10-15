@@ -24,6 +24,7 @@ from keyboards import (
     regions_kb,
     skip_kb,
 )
+from consent import require_terms
 from matching import is_match
 from utils import category_label, day_text, lost_code, lost_report_text
 
@@ -94,24 +95,29 @@ async def start_lost_report(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     if category not in CATEGORIES:
         return
-    if len(await db.list_user_lost_reports(callback.from_user.id)) >= MAX_ACTIVE_SEARCHES:
-        await callback.message.answer(
+    await begin_lost_report(callback.message, state, callback.from_user.id, category)
+
+
+async def begin_lost_report(message: Message, state: FSMContext, user_id: int, category: str):
+    """"Topilsa xabar bering" tugmasidan yoki ofertaga rozilikdan keyin chaqiriladi."""
+    if len(await db.list_user_lost_reports(user_id)) >= MAX_ACTIVE_SEARCHES:
+        await message.answer(
             f"Sizda allaqachon {MAX_ACTIVE_SEARCHES} ta faol qidiruv bor.\n"
             f"Keraksizlarini <b>«{BTN_MY_SEARCHES}»</b> bo'limida to'xtatib, keyin yangisini qo'shing."
         )
+        return
+    if not await require_terms(message, user_id, f"lostsub_{category}"):
         return
 
     await state.clear()
     await state.update_data(category=category)
     await state.set_state(LostForm.region)
-    await callback.message.answer(
+    await message.answer(
         f"🔔 <b>{category_label(category)}</b> uchun e'lon qoldiramiz.\n"
         "🔒 U kanalga chiqmaydi — faqat mos narsa topilganda sizga xabar berish uchun kerak.",
         reply_markup=cancel_kb(),
     )
-    await callback.message.answer(
-        "1/4. 🗺 <b>Qaysi viloyatda yo'qotdingiz?</b>", reply_markup=regions_kb(allow_unknown=True)
-    )
+    await message.answer("1/4. 🗺 <b>Qaysi viloyatda yo'qotdingiz?</b>", reply_markup=regions_kb(allow_unknown=True))
 
 
 @router.callback_query(LostForm.region, F.data.startswith("reg:"))

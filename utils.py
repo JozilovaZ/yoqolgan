@@ -43,6 +43,14 @@ CLAIM_STATUSES = {
 }
 
 
+HANDOVER_STATUSES = {
+    None: "⏳ topshirilishi kutilmoqda",
+    "confirmed": "🤝 topshirildi",
+    "disputed": "⚠️ nizo",
+    "refunded": "↩️ pul qaytarilgan",
+}
+
+
 def local_time(value: str | None) -> str:
     """Bazadagi UTC vaqt ("2026-10-15 09:30:00") -> mahalliy "15.10.2026 14:30"."""
     if not value:

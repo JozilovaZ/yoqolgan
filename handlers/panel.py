@@ -11,6 +11,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import BufferedInputFile, CallbackQuery, LinkPreviewOptions, Message
 
 import database as db
+from backup import send_backup
 from charts import daily_chart
 from config import ADMIN_GROUP_ID, FINDER_SHARE, SERVICE_FEE
 from export import build_export
@@ -18,6 +19,7 @@ from keyboards import broadcast_kb, item_card_kb, payouts_list_kb, stats_kb, use
 from services import mark_post_returned, post_link
 from utils import (
     CLAIM_STATUSES,
+    HANDOVER_STATUSES,
     ITEM_STATUSES,
     category_label,
     item_code,
@@ -50,6 +52,7 @@ HELP = (
     "📊 <b>/stats</b> — statistika (davrlar, solishtirish, grafik)\n"
     "💸 <b>/payouts</b> — o'tkazilmagan suyunchilar\n"
     "📁 <b>/export</b> — bazani Excel faylga\n"
+    "💾 <b>/backup</b> — bazaning zaxira nusxasi (har kuni avtomatik ham keladi)\n"
     "⏳ <b>/pending</b> — kanalga chiqmagan e'lonlar\n\n"
     "⛔ <b>/ban</b> @username [sabab] — bloklash\n"
     "✅ <b>/unban</b> @username — blokdan chiqarish\n"
@@ -80,7 +83,9 @@ def _item_card(item: dict, claims: list[dict]) -> str:
                 f"{CLAIM_STATUSES.get(claim['status'], claim['status'])}"
             )
             if claim["status"] == "completed":
-                line += " · 💸 suyunchi o'tkazildi" if claim["payout_at"] else " · 💸 suyunchi <b>o'tkazilmagan</b>"
+                line += f" · {HANDOVER_STATUSES[claim['handover']]}"
+                if claim["handover"] == "confirmed":
+                    line += " · 💸 suyunchi o'tkazildi" if claim["payout_at"] else " · 💸 suyunchi <b>o'tkazilmagan</b>"
             lines.append(line)
     else:
         lines.append("🙋 Murojaat yo'q")
@@ -501,6 +506,8 @@ async def _stats_text(period: str) -> str:
         f"{attention(now['pending'])}⏳ Kanalga chiqmagan: {now['pending']}" + (" → /pending" if now["pending"] else ""),
         f"{attention(now['waiting_claims'])}🙋 Admin javobini kutmoqda: {now['waiting_claims']}",
         f"💳 To'lov kutilmoqda: {now['awaiting_payment']}",
+        f"🤝 Topshirilishi kutilmoqda: {now['awaiting_handover']}",
+        f"{attention(now['disputes'])}🚨 Nizolar: {now['disputes']}",
         f"{attention(now['unpaid_payouts'])}💸 Suyunchi qarzi: {now['unpaid_payouts']} ta — "
         f"{money(now['unpaid_payouts'] * FINDER_REWARD)} so'm" + (" → /payouts" if now["unpaid_payouts"] else ""),
         f"📢 Kanalda: {now['published']} · 🔔 Faol qidiruvlar: {now['lost_active']}",
@@ -536,6 +543,18 @@ async def stats_switch(callback: CallbackQuery):
     except TelegramBadRequest:  # "message is not modified" — raqamlar o'zgarmagan
         pass
     await callback.answer()
+
+
+@router.message(Command("backup"))
+async def cmd_backup(message: Message, bot: Bot):
+    wait = await message.answer("⏳ Zaxira tayyorlanmoqda...")
+    try:
+        await send_backup(bot, message.chat.id)
+    except Exception as error:
+        logger.exception("Zaxira xatosi")
+        await wait.edit_text(f"❌ Zaxira olinmadi: {escape(str(error))}")
+        return
+    await wait.delete()
 
 
 @router.message(Command("export"))

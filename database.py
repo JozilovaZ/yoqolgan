@@ -45,8 +45,15 @@ CREATE TABLE IF NOT EXISTS claims (
     proof TEXT,
     receipt_photo_id TEXT,
     -- checking | rejected | awaiting_payment | payment_review | completed | expired
+    -- handover (completed bo'lsa): NULL — kutilmoqda | confirmed | disputed | refunded
     status TEXT NOT NULL DEFAULT 'checking',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bot holati (masalan, oxirgi zaxira sanasi) — qayta ishga tushganda ham saqlanadi
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
 );
 
 CREATE TABLE IF NOT EXISTS lost_reports (
@@ -79,6 +86,21 @@ MIGRATIONS = [
     "ALTER TABLE claims ADD COLUMN receipt_at TEXT",
     "ALTER TABLE claims ADD COLUMN payout_at TEXT",
     "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0",
+    # Narsa qo'lga tekkanini tasdiqlash
+    "ALTER TABLE claims ADD COLUMN completed_at TEXT",
+    "ALTER TABLE claims ADD COLUMN owner_answer TEXT",
+    "ALTER TABLE claims ADD COLUMN finder_answer TEXT",
+    "ALTER TABLE claims ADD COLUMN handover_asked_at TEXT",
+    # Oferta: qaysi tahririga qachon rozilik bergan
+    "ALTER TABLE users ADD COLUMN terms_version TEXT",
+    "ALTER TABLE users ADD COLUMN terms_accepted_at TEXT",
+    "ALTER TABLE claims ADD COLUMN handover_escalated INTEGER NOT NULL DEFAULT 0",
+    (
+        "ALTER TABLE claims ADD COLUMN handover TEXT",
+        # Bu yangilanishdan oldin yakunlangan murojaatlar topshirilgan deb hisoblanadi — suyunchisi to'xtab qolmasin
+        "UPDATE claims SET handover = 'confirmed', handover_asked_at = created_at, completed_at = created_at "
+        "WHERE status = 'completed'",
+    ),
 ]
 
 
@@ -86,10 +108,14 @@ async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA)
         for migration in MIGRATIONS:
+            # (ALTER, keyingi so'rov) — keyingi so'rov faqat ustun birinchi marta qo'shilganda ishlaydi
+            alter, *followups = (migration,) if isinstance(migration, str) else migration
             try:
-                await db.execute(migration)
+                await db.execute(alter)
             except aiosqlite.OperationalError:
-                pass
+                continue
+            for followup in followups:
+                await db.execute(followup)
         await db.commit()
 
 
@@ -133,6 +159,18 @@ def _set_clause(fields: dict) -> tuple[str, tuple]:
     return ", ".join(f"{key} = ?" for key in fields), tuple(fields.values())
 
 
+async def get_meta(key: str) -> str | None:
+    row = await _fetchone("SELECT value FROM meta WHERE key = ?", (key,))
+    return row["value"] if row else None
+
+
+async def set_meta(key: str, value: str) -> None:
+    await _execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+
+
 # ---------- users ----------
 
 async def save_user(user_id: int, full_name: str, username: str | None) -> None:
@@ -140,6 +178,20 @@ async def save_user(user_id: int, full_name: str, username: str | None) -> None:
         "INSERT INTO users (user_id, full_name, username) VALUES (?, ?, ?) "
         "ON CONFLICT(user_id) DO UPDATE SET full_name = excluded.full_name, username = excluded.username",
         (user_id, full_name, username),
+    )
+
+
+async def has_accepted_terms(user_id: int, version: str) -> bool:
+    row = await _fetchone("SELECT 1 FROM users WHERE user_id = ? AND terms_version = ?", (user_id, version))
+    return row is not None
+
+
+async def accept_terms(user_id: int, version: str) -> None:
+    await _execute(
+        "INSERT INTO users (user_id, terms_version, terms_accepted_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(user_id) DO UPDATE SET terms_version = excluded.terms_version, "
+        "terms_accepted_at = excluded.terms_accepted_at",
+        (user_id, version),
     )
 
 
@@ -261,19 +313,49 @@ async def close_open_claims(item_id: int) -> list[dict]:
 
 
 async def mark_payout(claim_id: int) -> bool:
-    """Suyunchi o'tkazildi. False — allaqachon belgilangan yoki murojaat yakunlanmagan."""
+    """Suyunchi o'tkazildi. False — allaqachon belgilangan yoki narsa topshirilgani tasdiqlanmagan."""
     changed = await _rowcount(
-        "UPDATE claims SET payout_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'completed' AND payout_at IS NULL",
+        "UPDATE claims SET payout_at = CURRENT_TIMESTAMP "
+        "WHERE id = ? AND status = 'completed' AND handover = 'confirmed' AND payout_at IS NULL",
         (claim_id,),
     )
     return changed > 0
 
 
 async def list_unpaid_payouts() -> list[dict]:
-    """To'lov qilingan, lekin topuvchiga suyunchi hali o'tkazilmagan murojaatlar (e'lon ma'lumotlari bilan)."""
+    """Narsa topshirilgani tasdiqlangan, lekin suyunchi hali o'tkazilmagan murojaatlar (e'lon ma'lumotlari bilan)."""
     return await _fetchall(
         "SELECT c.id AS claim_id, c.created_at AS claim_created_at, i.* FROM claims c "
-        "JOIN items i ON i.id = c.item_id WHERE c.status = 'completed' AND c.payout_at IS NULL ORDER BY c.id"
+        "JOIN items i ON i.id = c.item_id WHERE c.status = 'completed' AND c.handover = 'confirmed' "
+        "AND c.payout_at IS NULL ORDER BY c.id"
+    )
+
+
+async def mark_claim_completed(claim_id: int) -> None:
+    await _execute(
+        "UPDATE claims SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (claim_id,)
+    )
+
+
+async def list_handovers_to_ask(hours: float) -> list[dict]:
+    """To'lovdan `hours` soat o'tgan, lekin egasi hali "oldim" demagan va hali so'ralmagan murojaatlar."""
+    return await _fetchall(
+        "SELECT * FROM claims WHERE status = 'completed' AND handover IS NULL AND handover_asked_at IS NULL "
+        "AND completed_at <= datetime('now', ?) ORDER BY id",
+        (_ago(hours),),
+    )
+
+
+async def mark_handover_asked(claim_id: int) -> None:
+    await _execute("UPDATE claims SET handover_asked_at = CURRENT_TIMESTAMP WHERE id = ?", (claim_id,))
+
+
+async def list_handovers_to_escalate(hours: float) -> list[dict]:
+    """So'ralganiga `hours` soat bo'lgan, lekin egasi baribir javob bermagan murojaatlar."""
+    return await _fetchall(
+        "SELECT * FROM claims WHERE status = 'completed' AND handover IS NULL AND handover_escalated = 0 "
+        "AND handover_asked_at <= datetime('now', ?) ORDER BY id",
+        (_ago(hours),),
     )
 
 
@@ -409,7 +491,10 @@ async def get_stats() -> dict:
             (SELECT COUNT(*) FROM items WHERE status = 'published') AS published,
             (SELECT COUNT(*) FROM claims WHERE status IN ('checking', 'payment_review')) AS waiting_claims,
             (SELECT COUNT(*) FROM claims WHERE status = 'awaiting_payment') AS awaiting_payment,
-            (SELECT COUNT(*) FROM claims WHERE status = 'completed' AND payout_at IS NULL) AS unpaid_payouts,
+            (SELECT COUNT(*) FROM claims WHERE status = 'completed' AND handover = 'confirmed'
+                AND payout_at IS NULL) AS unpaid_payouts,
+            (SELECT COUNT(*) FROM claims WHERE status = 'completed' AND handover IS NULL) AS awaiting_handover,
+            (SELECT COUNT(*) FROM claims WHERE status = 'completed' AND handover = 'disputed') AS disputes,
             (SELECT COUNT(*) FROM lost_reports WHERE status = 'active') AS lost_active
         """
     )
@@ -453,7 +538,8 @@ async def get_period_stats(period: str, previous: bool = False) -> dict | None:
                 AND {between("COALESCE(closed_at, created_at)")}) AS returned,
             (SELECT COUNT(*) FROM claims WHERE {between("created_at")}) AS claims,
             (SELECT COUNT(*) FROM claims c JOIN items i ON i.id = c.item_id
-                WHERE c.status = 'completed' AND {between("COALESCE(i.closed_at, c.created_at)")}) AS paid,
+                WHERE c.status = 'completed' AND COALESCE(c.handover, '') != 'refunded'
+                AND {between("COALESCE(i.closed_at, c.created_at)")}) AS paid,
             (SELECT COUNT(*) FROM lost_reports WHERE {between("created_at")}) AS lost_reports
         """
     )

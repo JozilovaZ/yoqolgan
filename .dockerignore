@@ -8,3 +8,7 @@ __pycache__/
 nginx/
 deploy/
 docker-compose.yml
+tests/
+pytest.ini
+requirements-dev.txt
+.pytest_cache/

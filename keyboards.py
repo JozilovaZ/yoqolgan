@@ -136,6 +136,18 @@ def categories_kb(prefix: str):
     return builder.as_markup()
 
 
+def terms_kb(action: str, offer_url: str = ""):
+    """action — rozilikdan keyin davom etadigan amal: found / claim_15 / lostsub_phone."""
+    builder = InlineKeyboardBuilder()
+    if offer_url:
+        builder.button(text="📄 Oferta matni", url=offer_url)
+    else:
+        builder.button(text="📄 Oferta matni", callback_data="terms:read")
+    builder.button(text="✅ Roziman", callback_data=f"terms:ok:{action}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def confirm_found_kb():
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Yuborish", callback_data="found:send")
@@ -220,6 +232,27 @@ def claim_review_kb(claim_id: int):
 def claim_undo_kb(claim_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="↩️ Bekor qilish (egasi emas)", callback_data=f"cl:undo:{claim_id}")
+    return builder.as_markup()
+
+
+def handover_kb(claim_id: int, role: str):
+    """role: "o" — egasi, "f" — topuvchi."""
+    builder = InlineKeyboardBuilder()
+    if role == "o":
+        builder.button(text="✅ Narsamni oldim", callback_data=f"ho:o:yes:{claim_id}")
+        builder.button(text="⚠️ Topuvchi bilan bog'lana olmayapman", callback_data=f"ho:o:no:{claim_id}")
+    else:
+        builder.button(text="✅ Egasiga topshirdim", callback_data=f"ho:f:yes:{claim_id}")
+        builder.button(text="⚠️ Egasi kelmadi / bog'lanmadi", callback_data=f"ho:f:no:{claim_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def dispute_kb(claim_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Topshirildi — suyunchiga ruxsat", callback_data=f"hd:ok:{claim_id}")
+    builder.button(text="↩️ Pul qaytarildi — yopish", callback_data=f"hd:refund:{claim_id}")
+    builder.adjust(1)
     return builder.as_markup()
 
 

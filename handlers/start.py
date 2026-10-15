@@ -60,6 +60,7 @@ async def rules(message: Message):
         "• Telefon va karta raqamingizni faqat admin ko'radi, ikkinchi tomonga faqat to'lovdan keyin beriladi.\n"
         f"• E'lon yopilgach {DATA_RETENTION_DAYS} kun o'tib telefon, karta va hujjat ma'lumotlari bazadan o'chiriladi."
     )
+    text += "\n\n📜 To'liq shartlar (ommaviy oferta): /oferta"
     if ADMIN_USERNAME:
-        text += f"\n\n❓ Savollar uchun: {ADMIN_USERNAME}"
+        text += f"\n❓ Savollar uchun: {ADMIN_USERNAME}"
     await message.answer(text)

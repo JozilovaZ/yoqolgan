@@ -19,7 +19,7 @@ from config import (
     SERVICE_FEE,
 )
 from images import blurred_photo
-from keyboards import channel_post_kb, lost_match_kb, payout_kb
+from keyboards import channel_post_kb, dispute_kb, handover_kb, lost_match_kb, payout_kb
 from matching import is_match
 from utils import (
     category_label,
@@ -164,7 +164,7 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
     charge_id — onlayn to'lov bo'lsa, to'lov tizimidagi ID si.
     """
     code = item_code(item["id"])
-    await db.update_claim(claim["id"], status="completed")
+    await db.mark_claim_completed(claim["id"])
     await db.close_item(item["id"], "returned")
     await db.close_owner_lost_reports(claim["owner_id"], item["category"])
     share = SERVICE_FEE * FINDER_SHARE // 100
@@ -177,7 +177,10 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
         f"#{code} — {category_label(item['category'])} topgan inson bilan bog'laning:\n\n"
         f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
         f"📞 <b>{escape(item['finder_phone'] or '')}</b>\n\n"
-        "Narsangizni olishda omad! 🍀",
+        "Narsangizni olishda omad! 🍀\n\n"
+        "📦 Narsani qo'lingizga olgach, <b>«✅ Narsamni oldim»</b> tugmasini bosing. "
+        "Topuvchi bilan bog'lana olmasangiz — pastdagi ikkinchi tugmani bosing, admin yordam beradi.",
+        reply_markup=handover_kb(claim["id"], "o"),
     )
 
     # Topuvchiga egasining kontakti
@@ -186,15 +189,15 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
         f"👤 {user_link(claim['owner_id'], claim['owner_name'], claim['owner_username'])}\n"
         f"📞 <b>{escape(claim['owner_phone'] or '')}</b>\n\n"
         "U siz bilan bog'lanadi. Narsani topshirishda shaxsini tekshirib oling.\n\n"
-        f"🎁 Suyunchi: <b>{money(share)} so'm</b> "
+        f"🎁 Suyunchi: <b>{money(share)} so'm</b> — egasi narsani olganini tasdiqlagach "
     )
     if item["finder_card"]:
         finder_text += f"kartangizga ({escape(item['finder_card'])}) o'tkaziladi."
     else:
-        finder_text += "— olish uchun karta raqamingizni adminga yuboring"
+        finder_text += "beriladi. Olish uchun karta raqamingizni adminga yuboring"
         finder_text += f": {ADMIN_USERNAME}." if ADMIN_USERNAME else "."
-    finder_text += "\n\nYaxshilik qilganingiz uchun rahmat! 🙏"
-    await safe_send(bot, item["finder_id"], finder_text)
+    finder_text += "\n\nNarsani topshirgach, pastdagi tugmani bosing. Yaxshilik qilganingiz uchun rahmat! 🙏"
+    await safe_send(bot, item["finder_id"], finder_text, reply_markup=handover_kb(claim["id"], "f"))
 
     await mark_post_returned(bot, item)
 
@@ -202,12 +205,50 @@ async def complete_claim(bot: Bot, claim: dict, item: dict, charge_id: str = "")
     if charge_id:
         admin_text = (
             f"💳 <b>Onlayn to'lov qabul qilindi</b> | murojaat №{claim['id']}\n"
-            f"To'lov ID: <code>{escape(charge_id)}</code>\nIkki tomon avtomatik bog'landi ✅\n\n"
+            f"To'lov ID: <code>{escape(charge_id)}</code>\n\n"
         )
     admin_text += (
-        f"💸 <b>Suyunchi o'tkazish kerak</b> | #{code}\n\n"
-        f"Summa: <b>{money(share)} so'm</b>\n"
-        f"Kimga: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
-        f"Karta: <code>{escape(item['finder_card'] or 'kiritilmagan')}</code>"
+        f"🤝 <b>Ikki tomon bog'landi</b> | #{code}, murojaat №{claim['id']}\n\n"
+        "Egasi narsani olganini tasdiqlagach, suyunchi o'tkazish so'raladi."
     )
-    await safe_send(bot, ADMIN_GROUP_ID, admin_text, reply_markup=payout_kb(claim["id"]))
+    await safe_send(bot, ADMIN_GROUP_ID, admin_text)
+
+
+async def request_payout(bot: Bot, claim: dict, item: dict, note: str) -> None:
+    """Narsa topshirilgani tasdiqlandi — admin guruhga suyunchi o'tkazish so'rovi."""
+    await safe_send(
+        bot,
+        ADMIN_GROUP_ID,
+        f"{note}\n\n"
+        f"💸 <b>Suyunchi o'tkazish kerak</b> | #{item_code(item['id'])}\n\n"
+        f"Summa: <b>{money(SERVICE_FEE * FINDER_SHARE // 100)} so'm</b>\n"
+        f"Kimga: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}\n"
+        f"Karta: <code>{escape(item['finder_card'] or 'kiritilmagan')}</code>",
+        reply_markup=payout_kb(claim["id"]),
+    )
+
+
+ANSWERS = {
+    "o": {"yes": "✅ oldim", "no": "⚠️ topuvchi bilan bog'lana olmayapti", None: "javob bermagan"},
+    "f": {"yes": "✅ topshirdim", "no": "⚠️ egasi kelmadi / bog'lanmadi", None: "javob bermagan"},
+}
+
+
+async def report_dispute(bot: Bot, claim_id: int, reason: str) -> None:
+    """Narsa topshirilmagan bo'lishi mumkin — admin guruhga ikki tomon kontaktlari va qaror tugmalari bilan."""
+    claim = await db.get_claim(claim_id)
+    item = await db.get_item(claim["item_id"])
+    await safe_send(
+        bot,
+        ADMIN_GROUP_ID,
+        f"⚠️ <b>NIZO</b> | #{item_code(item['id'])}, murojaat №{claim['id']}\n"
+        f"{reason}\n\n"
+        f"👤 Egasi: {user_link(claim['owner_id'], claim['owner_name'], claim['owner_username'])} "
+        f"📞 {escape(claim['owner_phone'] or '—')}\n"
+        f"   └ {ANSWERS['o'][claim['owner_answer']]}\n"
+        f"👤 Topuvchi: {user_link(item['finder_id'], item['finder_name'], item['finder_username'])} "
+        f"📞 {escape(item['finder_phone'] or '—')}\n"
+        f"   └ {ANSWERS['f'][claim['finder_answer']]}\n\n"
+        "Ikki tomon bilan bog'lanib, hal qiling 👇",
+        reply_markup=dispute_kb(claim["id"]),
+    )

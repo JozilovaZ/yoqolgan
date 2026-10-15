@@ -21,8 +21,10 @@ from config import (
     WEBHOOK_SECRET,
     WEBHOOK_URL,
 )
+from alerts import on_error
 from handlers import get_routers
 from middlewares import BanMiddleware
+from utils import safe_send
 from scheduler import run_scheduler
 
 
@@ -33,6 +35,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="payouts", description="O'tkazilmagan suyunchilar"),
     BotCommand(command="export", description="Bazani Excel faylga"),
     BotCommand(command="pending", description="Kanalga chiqmagan e'lonlar"),
+    BotCommand(command="backup", description="Bazaning zaxira nusxasi"),
     BotCommand(command="ban", description="Bloklash: /ban @username sabab"),
     BotCommand(command="unban", description="Blokdan chiqarish"),
     BotCommand(command="broadcast", description="Xabarga reply qilib — barchaga yuborish"),
@@ -87,6 +90,7 @@ async def main() -> None:
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_routers(*get_routers())
+    dp.errors.register(on_error)  # kutilmagan xato — admin guruhga xabar
     for observer in (dp.message, dp.callback_query, dp.pre_checkout_query):
         observer.outer_middleware(BanMiddleware())
 
@@ -94,6 +98,7 @@ async def main() -> None:
         [
             BotCommand(command="start", description="Asosiy menyu"),
             BotCommand(command="cancel", description="Bekor qilish"),
+            BotCommand(command="oferta", description="Foydalanish shartlari"),
         ]
     )
     # Admin guruhda "/" bosilganda chiqadigan buyruqlar
@@ -106,6 +111,8 @@ async def main() -> None:
     # OCR modelini fonda oldindan yuklab qo'yamiz (birinchi hujjat tez ishlashi uchun)
     preload = asyncio.create_task(asyncio.to_thread(images.get_reader))
     preload.add_done_callback(lambda task: task.exception() and logging.warning("OCR yuklanmadi: %s", task.exception()))
+
+    await safe_send(bot, ADMIN_GROUP_ID, "🟢 Bot ishga tushdi")
 
     # Eslatmalar, muddati o'tganlarni yopish, eski shaxsiy ma'lumotlarni tozalash
     scheduler = asyncio.create_task(run_scheduler(bot))  # noqa: F841 — havola saqlanadi, aks holda GC o'chiradi
