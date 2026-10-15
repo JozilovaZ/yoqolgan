@@ -268,6 +268,16 @@ def user_card_kb(user_id: int, banned: bool):
     return builder.as_markup()
 
 
+def stats_kb(active: str):
+    builder = InlineKeyboardBuilder()
+    for period, title in (("today", "Bugun"), ("week", "7 kun"), ("month", "30 kun"), ("all", "Jami")):
+        builder.button(text=f"• {title} •" if period == active else title, callback_data=f"st:{period}")
+    builder.button(text="📈 Grafik", callback_data="st:chart")
+    builder.button(text="🔄 Yangilash", callback_data=f"st:{active}")
+    builder.adjust(4, 2)
+    return builder.as_markup()
+
+
 def broadcast_kb(message_id: int, count: int):
     builder = InlineKeyboardBuilder()
     builder.button(text=f"📣 Ha, {count} kishiga yuborish", callback_data=f"bc:go:{message_id}")

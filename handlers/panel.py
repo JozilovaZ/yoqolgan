@@ -2,18 +2,19 @@
 import asyncio
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from html import escape
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BufferedInputFile, CallbackQuery, LinkPreviewOptions, Message
 
 import database as db
+from charts import daily_chart
 from config import ADMIN_GROUP_ID, FINDER_SHARE, SERVICE_FEE
 from export import build_export
-from keyboards import broadcast_kb, item_card_kb, payouts_list_kb, user_card_kb
+from keyboards import broadcast_kb, item_card_kb, payouts_list_kb, stats_kb, user_card_kb
 from services import mark_post_returned, post_link
 from utils import (
     CLAIM_STATUSES,
@@ -46,7 +47,7 @@ HELP = (
     "   <code>/find Y0003</code> — yo'qotdim qidiruvi\n"
     "   <code>/find +998901234567</code> — telefon bo'yicha\n"
     "   <code>/find @username</code> yoki <code>/find 123456789</code> — foydalanuvchi\n\n"
-    "📊 <b>/stats</b> — statistika\n"
+    "📊 <b>/stats</b> — statistika (davrlar, solishtirish, grafik)\n"
     "💸 <b>/payouts</b> — o'tkazilmagan suyunchilar\n"
     "📁 <b>/export</b> — bazani Excel faylga\n"
     "⏳ <b>/pending</b> — kanalga chiqmagan e'lonlar\n\n"
@@ -437,39 +438,104 @@ async def payout_done(callback: CallbackQuery, bot: Bot):
 
 # ---------- statistika va eksport ----------
 
-@router.message(Command("stats"))
-async def cmd_stats(message: Message):
-    lines = ["📊 <b>Statistika</b>", ""]
-    for period, title in (("today", "Bugun"), ("week", "7 kun"), ("month", "30 kun"), ("all", "Jami")):
-        s = await db.get_period_stats(period)
-        income = s["paid"] * SERVICE_FEE
-        lines += [
-            f"<b>{title}</b>",
-            f"📦 E'lonlar: {s['items']} · 🙋 Murojaatlar: {s['claims']} · ✅ Qaytarildi: {s['returned']}",
-            f"💰 Tushum: {money(income)} so'm (sof: {money(income - s['paid'] * FINDER_REWARD)})",
-            f"👥 Yangi foydalanuvchilar: {s['users']} · 🔔 Qidiruvlar: {s['lost_reports']}",
-            "",
-        ]
+PERIOD_TITLES = {"today": "Bugun", "week": "7 kun", "month": "30 kun", "all": "Jami"}
+COMPARED_WITH = {"today": "kechaga", "week": "oldingi 7 kunga", "month": "oldingi 30 kunga"}
+CHART_DAYS = 30
 
-    now = await db.get_stats()
+
+def _delta(current: int, previous: int | None) -> str:
+    """Oldingi davrga nisbatan o'zgarish: "▲ 20%", "▼ 3", "＝"."""
+    if previous is None:
+        return ""
+    if current == previous:
+        return "  <i>＝</i>"
+    arrow = "▲" if current > previous else "▼"
+    if previous == 0:
+        return f"  <i>{arrow} +{current}</i>"
+    return f"  <i>{arrow} {abs(current - previous) * 100 // previous}%</i>"
+
+
+def _top_line(rows: list[dict], label) -> str:
+    return " · ".join(f"{label(row['value'])} {row['count']}" for row in rows)
+
+
+async def _stats_text(period: str) -> str:
+    s = await db.get_period_stats(period)
+    p = await db.get_period_stats(period, previous=True) or {}
+    income = s["paid"] * SERVICE_FEE
+    rate = f"{s['returned'] * 100 // s['items']}%" if s["items"] else "—"
+
+    lines = [f"📊 <b>Statistika — {PERIOD_TITLES[period]}</b>"]
+    if period in COMPARED_WITH:
+        lines.append(f"<i>▲▼ — {COMPARED_WITH[period]} nisbatan</i>")
     lines += [
-        "<b>Hozir</b>",
-        f"📢 Kanalda: {now['published']} · ⏳ Tekshiruvda: {now['pending']}",
-        f"🙋 Admin javobini kutmoqda: {now['waiting_claims']} · 💳 To'lov kutilmoqda: {now['awaiting_payment']}",
-        f"💸 O'tkazilmagan suyunchi: {now['unpaid_payouts']} ta ({money(now['unpaid_payouts'] * FINDER_REWARD)} so'm)",
-        f"🔔 Faol qidiruvlar: {now['lost_active']}",
-        f"👥 Foydalanuvchilar: {now['users']} · ⛔ Bloklangan: {now['banned']}",
+        "",
+        f"📦 E'lonlar: <b>{s['items']}</b>{_delta(s['items'], p.get('items'))}",
+        f"🙋 Murojaatlar: <b>{s['claims']}</b>{_delta(s['claims'], p.get('claims'))}",
+        f"✅ Qaytarildi: <b>{s['returned']}</b>{_delta(s['returned'], p.get('returned'))}",
+        f"🎯 Qaytarish darajasi: <b>{rate}</b>",
+        f"💰 Tushum: <b>{money(income)}</b> so'm{_delta(s['paid'], p.get('paid'))}",
+        f"      sof: {money(income - s['paid'] * FINDER_REWARD)} so'm",
+        f"👥 {'Foydalanuvchilar' if period == 'all' else 'Yangi foydalanuvchilar'}: "
+        f"<b>{s['users']}</b>{_delta(s['users'], p.get('users'))}",
+        f"🔔 Yo'qotdim qidiruvlari: <b>{s['lost_reports']}</b>",
     ]
 
-    categories = await db.top_values("category")
+    categories = await db.top_values("category", period)
+    regions = await db.top_values("region", period)
     if categories:
-        lines += ["", "<b>30 kunda eng ko'p topilganlar:</b>"]
-        lines += [f"{category_label(row['value'])} — {row['count']}" for row in categories]
-    regions = await db.top_values("region")
+        lines += ["", f"🏷 <b>Ko'p topilgan:</b> {_top_line(categories, category_label)}"]
     if regions:
-        lines += ["", "<b>Hududlar:</b>"]
-        lines += [f"📍 {escape(row['value'])} — {row['count']}" for row in regions]
-    await message.answer("\n".join(lines))
+        lines.append(f"📍 <b>Hududlar:</b> {_top_line(regions, escape)}")
+
+    # Hozirgi holat — e'tibor talab qiladiganlari ⚠️ bilan
+    now = await db.get_stats()
+
+    def attention(count: int) -> str:
+        return "⚠️ " if count else ""
+
+    lines += [
+        "",
+        "━━━━━━━━━━━━",
+        "⚡ <b>Hozir</b>",
+        f"{attention(now['pending'])}⏳ Kanalga chiqmagan: {now['pending']}" + (" → /pending" if now["pending"] else ""),
+        f"{attention(now['waiting_claims'])}🙋 Admin javobini kutmoqda: {now['waiting_claims']}",
+        f"💳 To'lov kutilmoqda: {now['awaiting_payment']}",
+        f"{attention(now['unpaid_payouts'])}💸 Suyunchi qarzi: {now['unpaid_payouts']} ta — "
+        f"{money(now['unpaid_payouts'] * FINDER_REWARD)} so'm" + (" → /payouts" if now["unpaid_payouts"] else ""),
+        f"📢 Kanalda: {now['published']} · 🔔 Faol qidiruvlar: {now['lost_active']}",
+        f"👥 Jami foydalanuvchilar: {now['users']} · ⛔ Bloklangan: {now['banned']}",
+        "",
+        f"<i>🕐 {datetime.now():%d.%m.%Y %H:%M} holatiga</i>",
+    ]
+    return "\n".join(lines)
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message):
+    await message.answer(await _stats_text("week"), reply_markup=stats_kb("week"))
+
+
+@router.callback_query(F.data.startswith("st:"))
+async def stats_switch(callback: CallbackQuery):
+    view = callback.data.split(":")[1]
+    if view == "chart":
+        await callback.answer("Grafik chizilmoqda...")
+        rows = await db.daily_counts(CHART_DAYS)
+        image = await asyncio.to_thread(daily_chart, rows, f"Oxirgi {CHART_DAYS} kun")
+        await callback.message.answer_photo(
+            BufferedInputFile(image, filename="statistika.png"),
+            caption=f"📈 Oxirgi {CHART_DAYS} kun: kunlik e'lonlar va egasiga qaytarilganlar",
+        )
+        return
+    if view not in PERIOD_TITLES:
+        await callback.answer()
+        return
+    try:
+        await callback.message.edit_text(await _stats_text(view), reply_markup=stats_kb(view))
+    except TelegramBadRequest:  # "message is not modified" — raqamlar o'zgarmagan
+        pass
+    await callback.answer()
 
 
 @router.message(Command("export"))

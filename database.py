@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import aiosqlite
 
 from config import DB_PATH
@@ -414,42 +416,84 @@ async def get_stats() -> dict:
     return row or {}
 
 
-# Davr boshlanishi (mahalliy vaqt bo'yicha, bazadagi UTC ga o'girilgan). None — butun davr
+# Davr: (boshlanishi, oldingi davr boshlanishi) — mahalliy vaqt bo'yicha, bazadagi UTC ga o'girilgan.
+# "7 kun" — bugun va oldingi 6 kalendar kun (grafik bilan bir xil hisoblanadi).
+# Oldingi davr solishtirish uchun: "bugun" — kecha bilan, "7 kun" — undan oldingi 7 kun bilan
 PERIODS = {
-    "today": "datetime('now', 'localtime', 'start of day', 'utc')",
-    "week": "datetime('now', '-7 days')",
-    "month": "datetime('now', '-30 days')",
-    "all": "'0000-00-00'",
+    "today": ("datetime('now', 'localtime', 'start of day', 'utc')",
+              "datetime('now', 'localtime', 'start of day', '-1 day', 'utc')"),
+    "week": ("datetime('now', 'localtime', 'start of day', '-6 days', 'utc')",
+             "datetime('now', 'localtime', 'start of day', '-13 days', 'utc')"),
+    "month": ("datetime('now', 'localtime', 'start of day', '-29 days', 'utc')",
+              "datetime('now', 'localtime', 'start of day', '-59 days', 'utc')"),
+    "all": ("'0000-00-00'", None),
 }
 
 
-async def get_period_stats(period: str) -> dict:
-    since = PERIODS[period]
+def _period_range(period: str, previous: bool) -> tuple[str, str]:
+    start, previous_start = PERIODS[period]
+    return (previous_start, start) if previous else (start, "'9999-12-31'")
+
+
+async def get_period_stats(period: str, previous: bool = False) -> dict | None:
+    """previous=True — oldingi davr (solishtirish uchun). "Jami" uchun oldingi davr yo'q — None."""
+    if previous and PERIODS[period][1] is None:
+        return None
+    since, until = _period_range(period, previous)
+
+    def between(column: str) -> str:
+        return f"{column} >= {since} AND {column} < {until}"
+
     row = await _fetchone(
         f"""
         SELECT
-            (SELECT COUNT(*) FROM users WHERE created_at >= {since}) AS users,
-            (SELECT COUNT(*) FROM items WHERE created_at >= {since}) AS items,
+            (SELECT COUNT(*) FROM users WHERE {between("created_at")}) AS users,
+            (SELECT COUNT(*) FROM items WHERE {between("created_at")}) AS items,
             (SELECT COUNT(*) FROM items WHERE status = 'returned'
-                AND COALESCE(closed_at, created_at) >= {since}) AS returned,
-            (SELECT COUNT(*) FROM claims WHERE created_at >= {since}) AS claims,
+                AND {between("COALESCE(closed_at, created_at)")}) AS returned,
+            (SELECT COUNT(*) FROM claims WHERE {between("created_at")}) AS claims,
             (SELECT COUNT(*) FROM claims c JOIN items i ON i.id = c.item_id
-                WHERE c.status = 'completed' AND COALESCE(i.closed_at, c.created_at) >= {since}) AS paid,
-            (SELECT COUNT(*) FROM lost_reports WHERE created_at >= {since}) AS lost_reports
+                WHERE c.status = 'completed' AND {between("COALESCE(i.closed_at, c.created_at)")}) AS paid,
+            (SELECT COUNT(*) FROM lost_reports WHERE {between("created_at")}) AS lost_reports
         """
     )
     return row or {}
 
 
-async def top_values(column: str, days: int = 30, limit: int = 5) -> list[dict]:
-    """Oxirgi `days` kunda eng ko'p uchragan turlar yoki hududlar."""
+async def top_values(column: str, period: str, limit: int = 5) -> list[dict]:
+    """Davr ichida eng ko'p uchragan turlar yoki hududlar."""
     assert column in ("category", "region")
+    since, until = _period_range(period, previous=False)
     return await _fetchall(
         f"SELECT {column} AS value, COUNT(*) AS count FROM items "
-        f"WHERE created_at >= datetime('now', ?) AND COALESCE({column}, '') != '' "
+        f"WHERE created_at >= {since} AND created_at < {until} AND COALESCE({column}, '') != '' "
         f"GROUP BY {column} ORDER BY count DESC LIMIT ?",
-        (f"-{days} days", limit),
+        (limit,),
     )
+
+
+async def daily_counts(days: int) -> list[dict]:
+    """Oxirgi `days` kun (mahalliy sana bo'yicha): har kuni berilgan va qaytarilgan e'lonlar.
+    Bo'sh kunlar ham qaytariladi (0 bilan)."""
+    since = f"datetime('now', 'localtime', 'start of day', '-{days - 1} days', 'utc')"
+    created = await _fetchall(
+        f"SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count FROM items "
+        f"WHERE created_at >= {since} GROUP BY day"
+    )
+    returned = await _fetchall(
+        f"SELECT date(COALESCE(closed_at, created_at), 'localtime') AS day, COUNT(*) AS count FROM items "
+        f"WHERE status = 'returned' AND COALESCE(closed_at, created_at) >= {since} GROUP BY day"
+    )
+    today = await _fetchone("SELECT date('now', 'localtime') AS day")
+    created_by_day = {row["day"]: row["count"] for row in created}
+    returned_by_day = {row["day"]: row["count"] for row in returned}
+
+    last = date.fromisoformat(today["day"])
+    result = []
+    for offset in range(days - 1, -1, -1):
+        day = (last - timedelta(days=offset)).isoformat()
+        result.append({"day": day, "items": created_by_day.get(day, 0), "returned": returned_by_day.get(day, 0)})
+    return result
 
 
 async def export_table(table: str) -> list[dict]:
