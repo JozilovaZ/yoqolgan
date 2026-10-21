@@ -1,6 +1,8 @@
 """Narsa qo'lga tekkanini tasdiqlash (handlers/handover.py): suyunchi faqat egasi "oldim" degach."""
 import sqlite3
 
+from aiogram.methods import SendPhoto
+
 import database as db
 import scheduler
 from services import complete_claim
@@ -20,7 +22,7 @@ async def paid_claim(tg) -> int:
 
 async def test_after_payment_buttons_but_no_payout_yet(tg):
     claim_id = await paid_claim(tg)
-    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]
+    assert buttons(tg.to(OWNER)[0]) == [f"hoqr:{claim_id}", f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]
     assert buttons(tg.to(FINDER)[0]) == [f"ho:f:yes:{claim_id}", f"ho:f:no:{claim_id}", f"chat:{claim_id}"]
     assert "Ikki tomon bog'landi" in tg.admin[0] and "Suyunchi o'tkazish kerak" not in tg.admin[0]
     assert await db.list_unpaid_payouts() == [] and not await db.mark_payout(claim_id)
@@ -35,7 +37,7 @@ async def test_stranger_cannot_answer(tg):
 async def test_finder_then_owner_confirms(tg):
     claim_id = await paid_claim(tg)
     await tg.press(f"ho:f:yes:{claim_id}", user_id=FINDER)
-    assert buttons(tg.to(OWNER)[0]) == [f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]  # egasidan so'raldi
+    assert buttons(tg.to(OWNER)[0]) == [f"hoqr:{claim_id}", f"ho:o:yes:{claim_id}", f"ho:o:no:{claim_id}", f"chat:{claim_id}"]  # egasidan so'raldi
     assert not tg.admin
 
     await tg.press(f"ho:o:yes:{claim_id}", user_id=OWNER)
@@ -107,3 +109,86 @@ async def test_scheduler_asks_silent_side_then_escalates(tg, fresh_db):
     tg.calls.clear()
     await scheduler.escalate_handover(tg.bot)
     assert not tg.calls
+
+
+# ---------- QR-kod bilan tasdiqlash ----------
+
+def read_qr(call) -> str:
+    """Bot yuborgan QR rasmdan havolani o'qiydi (OpenCV)."""
+    import cv2
+    import numpy as np
+
+    image = cv2.imdecode(np.frombuffer(call.photo.data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    text, _, _ = cv2.QRCodeDetector().detectAndDecode(image)
+    return text
+
+
+async def owner_qr(tg, claim_id: int) -> tuple[str, str]:
+    """Egasi QR-kodni ochadi. Qaytaradi: (/start argumenti, 6 xonali kod)."""
+    await tg.press(f"hoqr:{claim_id}", user_id=OWNER)
+    [photo] = tg.to(OWNER, SendPhoto)
+    assert photo.protect_content
+    url = read_qr(photo)
+    assert url.startswith("https://t.me/izla_bot?start=ho_")
+    claim = await db.get_claim(claim_id)
+    assert f"{claim['handover_code'][:3]} {claim['handover_code'][3:]}" in photo.caption
+    return url.split("start=")[1], claim["handover_code"]
+
+
+async def test_finder_scans_owner_qr(tg):
+    claim_id = await paid_claim(tg)
+    start_arg, _ = await owner_qr(tg, claim_id)
+    again, _ = await owner_qr(tg, claim_id)
+    assert again == start_arg  # qayta bosilsa — o'sha kod
+
+    await tg.send(f"/start {start_arg}", user_id=STRANGER)
+    assert "boshqa topshirish uchun" in tg.texts(STRANGER)[0]
+    await tg.send(f"/start {start_arg}", user_id=OWNER)
+    assert "sizning QR-kodingiz" in tg.texts(OWNER)[0]
+    assert (await db.get_claim(claim_id))["handover"] is None
+
+    await tg.send(f"/start {start_arg}", user_id=FINDER)
+    claim = await db.get_claim(claim_id)
+    assert claim["handover"] == "confirmed" and claim["owner_answer"] == claim["finder_answer"] == "yes"
+    assert "topshirilgani tasdiqlandi" in tg.texts(FINDER)[0]
+    assert "QR-kodingizni tasdiqladi" in tg.texts(OWNER)[0]
+    assert "QR-kod bilan tasdiqlandi" in tg.admin[0] and "Suyunchi o'tkazish kerak" in tg.admin[0]
+
+    await tg.send(f"/start {start_arg}", user_id=FINDER)
+    assert "allaqachon yopilgan" in tg.texts(FINDER)[0] and not tg.admin  # ikkinchi suyunchi so'rovi yo'q
+
+
+async def test_finder_types_six_digit_code(tg):
+    claim_id = await paid_claim(tg)
+    await tg.send("123456", user_id=FINDER)
+    assert "Tushunmadim" in tg.texts(FINDER)[0]  # egasi hali QR ochmagan — oddiy matn
+
+    _, code = await owner_qr(tg, claim_id)
+    await tg.send(f" {code} ", user_id=FINDER)
+    assert (await db.get_claim(claim_id))["handover"] == "confirmed"
+    assert "6 xonali kod bilan tasdiqlandi" in tg.admin[0]
+
+
+async def test_wrong_codes_lock_after_limit(tg):
+    claim_id = await paid_claim(tg)
+    start_arg, code = await owner_qr(tg, claim_id)
+    wrong = f"{(int(code) + 1) % 10**6:06d}"
+    for left in range(4, 0, -1):
+        await tg.send(wrong, user_id=FINDER)
+        assert f"<b>{left}</b> ta urinish" in tg.texts(FINDER)[0]
+    await tg.send(wrong, user_id=FINDER)
+    assert "bloklandi" in tg.texts(FINDER)[0] and "5 marta noto'g'ri" in tg.admin[0]
+
+    await tg.send(code, user_id=FINDER)  # endi to'g'ri kod ham qabul qilinmaydi
+    assert "bloklandi" in tg.texts(FINDER)[0] and (await db.get_claim(claim_id))["handover"] is None
+
+    await tg.send(f"/start {start_arg}", user_id=FINDER)  # QR esa ishlaydi
+    assert (await db.get_claim(claim_id))["handover"] == "confirmed"
+
+
+async def test_qr_only_for_owner_of_paid_claim(tg):
+    claim_id = await paid_claim(tg)
+    await tg.press(f"hoqr:{claim_id}", user_id=FINDER)
+    assert tg.alerts() and not tg.sent(SendPhoto)
+    await tg.send("/start ho_notatoken", user_id=FINDER)
+    assert "endi amalda emas" in tg.texts(FINDER)[0]

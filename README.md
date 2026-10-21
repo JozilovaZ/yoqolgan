@@ -47,6 +47,7 @@ Yangi matn qo'shganda kalitni `locales/uz.py` va `locales/ru.py` ikkalasiga ham 
 
 To'lovdan so'ng egasi **"✅ Narsamni oldim"**, topuvchi **"✅ Egasiga topshirdim"** tugmasini oladi. **Suyunchi faqat egasi tasdiqlagach** so'raladi (admin guruhga "💸 Suyunchi o'tkazish kerak" xabari va `/payouts`).
 
+- **QR-kod:** egasi **"📲 Topshirish QR-kodi"** ni bosadi. Bot QR-kod yuboradi, uni forward qilib yoki saqlab bo'lmaydi. Uchrashganda topuvchi QR-kodni telefoni kamerasi bilan skanerlaydi (`/start ho_<token>`) yoki QR ostidagi 6 xonali kodni botga yozadi. Shu zahoti ikkala tomon tasdiqlagan hisoblanadi va suyunchi so'raladi. QR-kodni faqat shu narsani topgan odam ishlata oladi. 6 xonali kod 5 marta noto'g'ri kiritilsa, bloklanadi va adminga xabar boradi (QR esa ishlayveradi).
 - 24 soatda javob bo'lmasa, bot javob bermagan tomondan o'zi so'raydi. Yana 48 soatda egasi javob bermasa, adminga xabar boradi.
 - "⚠️ bog'lana olmayapman" bosilsa, adminga **nizo** xabari boradi: ikkala tomon kontakti va **"✅ Topshirildi"** (suyunchiga ruxsat) yoki **"↩️ Pul qaytarildi"** (suyunchi berilmaydi, tushumdan chiqariladi) tugmalari.
 - `/stats` da "topshirilishi kutilmoqda" va "nizolar" soni ko'rinadi.

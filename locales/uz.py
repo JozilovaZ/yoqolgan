@@ -35,6 +35,7 @@ TEXTS = {
     "kb.stop_search": "🔕 Qidiruvni to'xtatish",
     "kb.stop_search_code": "🔕 #{code} — to'xtatish",
     "kb.owner_yes": "✅ Narsamni oldim",
+    "kb.handover_qr": "📲 Topshirish QR-kodi",
     "kb.owner_no": "⚠️ Topuvchi bilan bog'lana olmayapman",
     "kb.finder_yes": "✅ Egasiga topshirdim",
     "kb.finder_no": "⚠️ Egasi kelmadi / bog'lanmadi",
@@ -336,7 +337,8 @@ TEXTS = {
         "📞 <b>{phone}</b>\n\n"
         "Narsangizni olishda omad! 🍀\n"
         "💬 Uchrashuvni bot orqali ham kelishib olishingiz mumkin — pastdagi tugma.\n\n"
-        "📦 Narsani qo'lingizga olgach, <b>«✅ Narsamni oldim»</b> tugmasini bosing. "
+        "📦 Uchrashganda narsani tekshirib oling va <b>«📲 Topshirish QR-kodi»</b>ni topuvchiga ko'rsating "
+        "(yoki <b>«✅ Narsamni oldim»</b> tugmasini bosing). "
         "Topuvchi bilan bog'lana olmasangiz — pastdagi ikkinchi tugmani bosing, admin yordam beradi."
     ),
     "deal.finder": (
@@ -348,10 +350,37 @@ TEXTS = {
     ),
     "deal.finder_card": "kartangizga ({card}) o'tkaziladi.",
     "deal.finder_no_card": "beriladi. Olish uchun karta raqamingizni adminga yuboring",
-    "deal.finder_footer": "\n\nNarsani topshirgach, pastdagi tugmani bosing. Yaxshilik qilganingiz uchun rahmat! 🙏",
+    "deal.finder_footer": (
+        "\n\n📲 Narsani topshirayotganda egasidan <b>QR-kodni</b> so'rang va telefoningiz kamerasi bilan skanerlang "
+        "(yoki u aytgan 6 xonali kodni shu yerga yozing) — topshirish darhol tasdiqlanadi.\n"
+        "Yaxshilik qilganingiz uchun rahmat! 🙏"
+    ),
 
     # ---------- narsa topshirildimi ----------
     "ho.not_active": "Bu so'rov endi amalda emas",
+    "ho.qr_caption": (
+        "📲 <b>#{item} — topshirish QR-kodi</b>\n\n"
+        "Narsani <b>qo'lingizga olib, tekshirgach</b>, shu QR-kodni topuvchiga ko'rsating. "
+        "U telefoni kamerasi bilan skanerlaydi — topshirish avtomatik tasdiqlanadi.\n\n"
+        "Skanerlay olmasa, kodni aytib bering: <b>{code}</b>\n\n"
+        "⚠️ Narsani olmasdan oldin ko'rsatmang va hech kimga yubormang: bu "
+        "<b>«✅ Narsamni oldim»</b> tugmasini bosish bilan barobar."
+    ),
+    "ho.qr_owner_done": (
+        "🤝 #{code}: topuvchi QR-kodingizni tasdiqladi — narsa sizga topshirildi.\n"
+        "Botimizdan foydalanganingiz uchun rahmat! 🙏"
+    ),
+    "ho.qr_invalid": "Bu QR-kod endi amalda emas.",
+    "ho.qr_own": "Bu sizning QR-kodingiz 🙂 Uni narsani topshirayotgan topuvchiga ko'rsating — u skanerlaydi.",
+    "ho.qr_not_finder": "Bu QR-kod boshqa topshirish uchun. Uni faqat narsani topgan odam skanerlashi kerak.",
+    "ho.code_wrong": (
+        "❌ Kod noto'g'ri. Yana <b>{left}</b> ta urinish qoldi.\n"
+        "Kodni egasidan qayta so'rang — u QR-kod ostida yozilgan."
+    ),
+    "ho.code_locked": (
+        "🔒 Kod ko'p marta noto'g'ri kiritilgani uchun bloklandi. "
+        "Egasidan QR-kodni ko'rsatishini so'rang va telefoningiz kamerasi bilan skanerlang."
+    ),
     "ho.already_closed": "Bu murojaat allaqachon yopilgan ✅",
     "ho.finder_confirmed": (
         "🎉 #{code}: narsa egasiga topshirilgani tasdiqlandi. Suyunchingiz tez orada o'tkaziladi. Rahmat! 🙏"

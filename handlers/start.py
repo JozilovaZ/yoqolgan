@@ -11,6 +11,7 @@ from keyboards import BUTTONS, lang_kb, main_menu
 from utils import money
 
 from .claim import start_claim
+from .handover import confirm_by_qr
 
 router = Router()
 router.message.filter(F.chat.type == ChatType.PRIVATE)
@@ -28,6 +29,10 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject,
     # Kanaldagi "Bu meniki" tugmasidan kelgan bo'lsa: /start claim_15
     if command.args and command.args.startswith("claim_") and command.args[6:].isdigit():
         await start_claim(message, state, int(command.args[6:]), user, lang)
+        return
+    # Topuvchi egasining QR-kodini skanerladi: /start ho_<token>
+    if command.args and command.args.startswith("ho_"):
+        await confirm_by_qr(message, command.args[3:], lang)
         return
 
     await message.answer(t("start.welcome", lang, name=user.first_name), reply_markup=main_menu(lang))

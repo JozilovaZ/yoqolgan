@@ -137,7 +137,7 @@ async def test_owner_sees_finder_contact_after_payment(tg):
     await tg.press(f"my:c:{claim['id']}", user_id=OWNER)
     card = tg.calls[-1]
     assert "+998901234567" in card.text and "topshirilishi kutilmoqda" in card.text
-    assert buttons(card)[:2] == [f"ho:o:yes:{claim['id']}", f"ho:o:no:{claim['id']}"]
+    assert buttons(card)[:3] == [f"hoqr:{claim['id']}", f"ho:o:yes:{claim['id']}", f"ho:o:no:{claim['id']}"]
 
 
 async def test_back_to_list(tg):

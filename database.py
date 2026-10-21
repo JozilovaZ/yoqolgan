@@ -130,6 +130,10 @@ MIGRATIONS = [
     "ALTER TABLE lost_reports ADD COLUMN photo_id TEXT",
     "ALTER TABLE lost_reports ADD COLUMN embedding BLOB",
     "ALTER TABLE items ADD COLUMN embedding BLOB",
+    # Topshirishni QR-kod bilan tasdiqlash: QR'dagi token va qo'lda yoziladigan 6 xonali kod
+    "ALTER TABLE claims ADD COLUMN handover_token TEXT",
+    "ALTER TABLE claims ADD COLUMN handover_code TEXT",
+    "ALTER TABLE claims ADD COLUMN handover_code_attempts INTEGER NOT NULL DEFAULT 0",
     (
         "ALTER TABLE claims ADD COLUMN handover TEXT",
         # Bu yangilanishdan oldin yakunlangan murojaatlar topshirilgan deb hisoblanadi — suyunchisi to'xtab qolmasin
@@ -323,6 +327,20 @@ async def create_claim(data: dict) -> int:
 
 async def get_claim(claim_id: int) -> dict | None:
     return await _fetchone("SELECT * FROM claims WHERE id = ?", (claim_id,))
+
+
+async def get_claim_by_handover_token(token: str) -> dict | None:
+    return await _fetchone("SELECT * FROM claims WHERE handover_token = ?", (token,))
+
+
+async def list_finder_code_handovers(finder_id: int) -> list[dict]:
+    """Topuvchining egasi QR-kod olgan, hali topshirilmagan murojaatlari (6 xonali kodni tekshirish uchun)."""
+    return await _fetchall(
+        "SELECT claims.* FROM claims JOIN items ON items.id = claims.item_id "
+        "WHERE items.finder_id = ? AND claims.status = 'completed' AND claims.handover_code IS NOT NULL "
+        "AND COALESCE(claims.handover, '') NOT IN ('confirmed', 'refunded') ORDER BY claims.id",
+        (finder_id,),
+    )
 
 
 async def update_claim(claim_id: int, **fields) -> None:

@@ -248,6 +248,7 @@ def handover_kb(claim_id: int, role: str, lang: str = "uz"):
     """role: "o" — egasi, "f" — topuvchi."""
     builder = InlineKeyboardBuilder()
     if role == "o":
+        builder.button(text=t("kb.handover_qr", lang), callback_data=f"hoqr:{claim_id}")
         builder.button(text=t("kb.owner_yes", lang), callback_data=f"ho:o:yes:{claim_id}")
         builder.button(text=t("kb.owner_no", lang), callback_data=f"ho:o:no:{claim_id}")
     else:
@@ -303,6 +304,8 @@ def my_claim_kb(claim: dict, online_payment: bool, lang: str = "uz"):
     if claim["status"] == "awaiting_payment":
         text = t("kb.pay_online" if online_payment else "kb.pay_card", lang)
         builder.button(text=text, callback_data=f"my:pay:{claim['id']}")
+    if claim["status"] == "completed" and claim["handover"] not in ("confirmed", "refunded"):
+        builder.button(text=t("kb.handover_qr", lang), callback_data=f"hoqr:{claim['id']}")
     if claim["status"] == "completed" and claim["handover"] is None and not claim["owner_answer"]:
         builder.button(text=t("kb.owner_yes", lang), callback_data=f"ho:o:yes:{claim['id']}")
         builder.button(text=t("kb.owner_no", lang), callback_data=f"ho:o:no:{claim['id']}")

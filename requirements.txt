@@ -6,4 +6,5 @@ numpy==2.4.4
 opencv-python-headless==4.13.0.92
 easyocr==1.7.1
 openpyxl==3.1.5
+qrcode==8.2
 # torch va torchvision — easyocr uchun. Docker'da CPU versiyasi alohida o'rnatiladi (Dockerfile ga qarang)

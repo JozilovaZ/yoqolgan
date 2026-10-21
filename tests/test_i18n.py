@@ -96,7 +96,7 @@ async def test_each_side_gets_own_language(tg):
     assert "Оплата подтверждена" in tg.texts(OWNER)[0]
     assert "egasi topildi" in tg.texts(FINDER)[0]
     assert "Bot orqali yozish" in tg.to(FINDER)[0].reply_markup.inline_keyboard[2][0].text
-    assert "Написать через бота" in tg.to(OWNER)[0].reply_markup.inline_keyboard[2][0].text
+    assert "Написать через бота" in tg.to(OWNER)[0].reply_markup.inline_keyboard[3][0].text
     assert any("Ikki tomon bog'landi" in text for text in tg.admin)  # admin guruh — o'zbekcha
 
 
