@@ -100,6 +100,7 @@ Testlar haqiqiy bot kodini aiogram Dispatcher orqali ishlatadi, lekin Telegram'g
 | Fayl | Nimani tekshiradi |
 |---|---|
 | `test_flows.py` | "Yo'qotdim" e'loni, mos narsa chiqqanda xabar, hujjatni avtomatik tasdiqlash, onlayn to'lov |
+| `test_instagram.py` | Instagram: rasm nisbati, izoh, navbat, limit va xatolar |
 | `test_handover.py` | Narsa topshirilishini tasdiqlash, nizolar, suyunchi faqat tasdiqdan keyin |
 | `test_chat.py` | Egasi va topuvchi o'rtasidagi yozishma |
 | `test_i18n.py` | Lug'atlar to'liqligi, ruscha foydalanuvchi yo'li, har tomonga o'z tilida xabar |
@@ -143,6 +144,7 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 - `keyboards.py` – tugmalar
 - `utils.py` – post matnlari va yordamchi funksiyalar
 - `services.py` – kanalga e'lon chiqarish va yo'qotganlarga xabar berish
+- `instagram.py` – e'lonlarni Instagram'ga joylash
 - `matching.py` – yo'qotilgan va topilgan narsalarni moslashtirish
 - `geo.py` – lokatsiyadan manzilni aniqlash (OpenStreetMap)
 - `handlers/found.py` – narsa topgan odam uchun bo'lim
@@ -159,6 +161,6 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 
 ## Rejadagi ishlar
 
-- [ ] Instagramga avtomatik joylash (Meta Graph API)
+- [x] Instagramga avtomatik joylash (Meta Graph API) — DEPLOY.md
 - [x] Payme/Click orqali avtomatik to'lov
 - [x] "Yo'qotdim" e'lonlari va topilgan narsalar bilan avtomatik moslashtirish

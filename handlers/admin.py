@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 import database as db
+import instagram
 from config import ADMIN_GROUP_ID, ADMIN_USERNAME, CHANNEL_ID
 from i18n import t, user_lang
 from keyboards import moderation_kb, published_kb
@@ -67,7 +68,7 @@ async def delete_item(callback: CallbackQuery, bot: Bot):
         await callback.answer(f"Kanaldan o'chmadi: {error}", show_alert=True)
         return
     await db.close_item(item["id"], "removed")
-    await _mark_done(callback, "🗑 Kanaldan o'chirildi")
+    await _mark_done(callback, "🗑 Kanaldan o'chirildi" + instagram.removal_note(item))
     lang = await user_lang(item["finder_id"])
     await safe_send(bot, item["finder_id"], t("adm.removed", lang, code=item_code(item["id"])))
     await callback.answer("O'chirildi")

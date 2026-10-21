@@ -41,6 +41,12 @@ server {
         proxy_pass http://bot:8080/health;
     }
 
+    # Instagram e'lon rasmlarini shu yerdan yuklab oladi (fayllar joylangach o'chiriladi)
+    location /media/ {
+        proxy_pass http://bot:8080;
+        proxy_set_header Host $host;
+    }
+
     location / {
         return 404;
     }

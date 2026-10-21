@@ -77,6 +77,16 @@ WEBHOOK_PATH = "/webhook"
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
 
+# Instagram: kanalga chiqqan e'lonlar Instagram biznes akkauntiga ham joylanadi (Meta Graph API).
+# Instagram rasmni faqat ochiq havola orqali oladi — shuning uchun WEBHOOK_URL (domen) ham kerak.
+INSTAGRAM_USER_ID = os.getenv("INSTAGRAM_USER_ID", "").strip()
+INSTAGRAM_TOKEN = os.getenv("INSTAGRAM_TOKEN", "").strip()
+INSTAGRAM_API_VERSION = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
+INSTAGRAM_ENABLED = bool(INSTAGRAM_USER_ID and INSTAGRAM_TOKEN and WEBHOOK_URL)
+# Instagram yuklab olishi uchun rasmlar vaqtincha shu papkada turadi (WEBHOOK_URL/media/... orqali)
+MEDIA_DIR = os.getenv("MEDIA_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "media"))
+MEDIA_PATH = "/media"
+
 # key: (nomi, hashtag, hujjatmi)
 CATEGORIES = {
     "passport": ("🛂 Pasport", "pasport", True),

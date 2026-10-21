@@ -107,6 +107,13 @@ MIGRATIONS = [
     "ALTER TABLE claims ADD COLUMN handover_escalated INTEGER NOT NULL DEFAULT 0",
     # Foydalanuvchi tili: uz | ru (NULL — hali tanlanmagan)
     "ALTER TABLE users ADD COLUMN lang TEXT",
+    # Instagram: ig_status — NULL (joylanmaydi) | queued | posted | failed | skipped
+    "ALTER TABLE items ADD COLUMN ig_status TEXT",
+    "ALTER TABLE items ADD COLUMN ig_photo_id TEXT",  # kanalga chiqqan (xiralashtirilgan bo'lishi mumkin) rasm
+    "ALTER TABLE items ADD COLUMN ig_attempts INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE items ADD COLUMN ig_error TEXT",
+    "ALTER TABLE items ADD COLUMN ig_media_id TEXT",
+    "ALTER TABLE items ADD COLUMN ig_permalink TEXT",
     (
         "ALTER TABLE claims ADD COLUMN handover TEXT",
         # Bu yangilanishdan oldin yakunlangan murojaatlar topshirilgan deb hisoblanadi — suyunchisi to'xtab qolmasin
@@ -263,6 +270,10 @@ async def close_item(item_id: int, status: str) -> None:
         "UPDATE items SET status = ?, closed_at = CURRENT_TIMESTAMP, ocr_text = NULL WHERE id = ?",
         (status, item_id),
     )
+
+
+async def list_instagram_queue() -> list[dict]:
+    return await _fetchall("SELECT * FROM items WHERE ig_status = 'queued' ORDER BY id")
 
 
 async def list_user_items(user_id: int, limit: int = 10) -> list[dict]:

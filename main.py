@@ -10,12 +10,16 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 import database as db
 import images
+import instagram
 from config import (
     ADMIN_GROUP_ID,
     BOT_TOKEN,
     CARD_NUMBER,
     PAYMENT_PROVIDER_TOKEN,
     CHANNEL_ID,
+    INSTAGRAM_ENABLED,
+    INSTAGRAM_TOKEN,
+    MEDIA_PATH,
     WEB_PORT,
     WEBHOOK_PATH,
     WEBHOOK_SECRET,
@@ -57,6 +61,8 @@ def check_config() -> None:
         sys.exit(".env faylida BOT_TOKEN yo'q. README.md dagi ko'rsatmaga qarang.")
     if missing:
         logging.warning(".env da to'ldirilmagan: %s", ", ".join(missing))
+    if INSTAGRAM_TOKEN and not INSTAGRAM_ENABLED:
+        logging.warning("Instagram o'chiq: INSTAGRAM_USER_ID va WEBHOOK_URL (domen) ham kerak")
 
 
 async def run_webhook(bot: Bot, dp: Dispatcher) -> None:
@@ -66,6 +72,7 @@ async def run_webhook(bot: Bot, dp: Dispatcher) -> None:
 
     app = web.Application()
     app.router.add_get("/health", lambda request: web.Response(text="ok"))
+    app.router.add_get(MEDIA_PATH + "/{name}", instagram.serve_media)  # Instagram rasmni shu yerdan oladi
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=WEBHOOK_SECRET or None).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from aiogram import Bot
 
 import database as db
+import instagram
 from alerts import report_error
 from backup import send_backup
 from config import (
@@ -149,6 +150,7 @@ JOBS = [
     close_outdated_lost_reports,
     purge_personal_data,
     daily_backup,
+    instagram.process_queue,  # joylanmay qolganlar (limit, tarmoq xatosi) qayta uriniladi
 ]
 
 

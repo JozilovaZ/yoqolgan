@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
 
 import database as db
+import instagram
 from config import ADMIN_GROUP_ID, ADMIN_USERNAME, CHANNEL_ID, FINDER_SHARE, PAYMENT_PROVIDER_TOKEN, SERVICE_FEE
 from i18n import t
 from keyboards import BUTTONS, cancel_kb, main_menu, my_claim_kb, my_item_kb, my_list_kb
@@ -206,7 +207,8 @@ async def remove_item(callback: CallbackQuery, bot: Bot, lang: str):
         bot,
         ADMIN_GROUP_ID,
         f"🗑 #{item_code(item['id'])}: topuvchi e'lonini o'zi olib tashladi.\n"
-        f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}{note}",
+        f"👤 {user_link(item['finder_id'], item['finder_name'], item['finder_username'])}{note}"
+        + instagram.removal_note(item),
         link_preview_options=NO_PREVIEW,
     )
 

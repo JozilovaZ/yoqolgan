@@ -158,6 +158,44 @@ crontab -e
 ```
 (Avval `mkdir -p /root/yoqolgan/backups`)
 
+## 📷 Instagram'ga avtomatik joylash (ixtiyoriy)
+
+Kanalga chiqqan har bir e'lon Instagram akkauntga ham joylanadi: kanaldagi rasmning o'zi (hujjatlar — xiralashtirilgan),
+rasmsiz e'lonlar uchun esa kartochka. Izohda botga e'lon raqami (masalan, `T0012`) bilan yozish so'raladi.
+
+**Talablar:** 5-B rejimi (domen + webhook) — Instagram rasmni `https://DOMEN/media/...` havolasidan o'zi yuklab oladi.
+Instagram akkaunt **Biznes yoki Creator** turida va **Facebook sahifaga ulangan** bo'lishi kerak.
+
+**1) Meta ilova:** [developers.facebook.com](https://developers.facebook.com/apps) → *Create app* → turi **Business**.
+Ilovaga **Instagram** (Instagram API with Facebook Login) mahsulotini qo'shing.
+
+**2) Doimiy token (System User):** [business.facebook.com/settings](https://business.facebook.com/settings) →
+*Users → System users* → *Add* (Admin) → *Assign assets*: Facebook sahifa va Instagram akkaunt (to'liq boshqaruv) →
+*Generate new token* → ilovangizni tanlang, muddat **Never**, ruxsatlar:
+`instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`.
+
+> Oddiy foydalanuvchi tokeni 60 kunda tugaydi — System User tokeni tugamaydi.
+
+**3) Instagram akkaunt ID si:**
+```bash
+curl "https://graph.facebook.com/v23.0/me/accounts?fields=name,instagram_business_account&access_token=TOKEN"
+# "instagram_business_account": {"id": "1784..."}  ← shu raqam
+```
+
+**4) `.env`:**
+```
+INSTAGRAM_USER_ID=1784...
+INSTAGRAM_TOKEN=EAAG...
+```
+`docker compose --profile webhook up -d` — loglarda `#... Instagram'ga joylandi` chiqadi.
+
+**Bilish kerak:**
+- Instagram kuniga API orqali cheklangan miqdorda post qabul qiladi (hozir 100 ta). Limit tugasa e'lonlar navbatda turadi
+  va keyinroq avtomatik joylanadi.
+- Instagram vaqtincha ishlamasa — har 15 daqiqada qayta uriniladi; 5 marta o'xshamasa admin guruhga sababi bilan xabar keladi.
+- **API orqali Instagram postini o'chirib bo'lmaydi.** E'lon kanaldan o'chirilsa, admin guruhga Instagram havolasi keladi —
+  ilovadan qo'lda o'chiring. Egasiga qaytarilgan e'lonlar Instagram'da qoladi (bot "allaqachon qaytarilgan" deb javob beradi).
+
 ## ❓ Muammolar
 
 | Xato | Yechim |
@@ -165,6 +203,8 @@ crontab -e
 | `TelegramConflictError` | Bot boshqa joyda ham ishlayapti — kompyuterdagini to'xtating |
 | `Killed` yoki konteyner qayta-qayta o'chadi | RAM yetmayapti — 2 GB+ server yoki swap qo'shing (pastda) |
 | `get-ssl.sh` xato beradi | DNS hali tarqalmagan (10–60 daqiqa kuting) yoki 80-port yopiq |
+| Instagram: `Invalid OAuth access token` | Token noto'g'ri yoki bekor qilingan — System User tokenini qayta oling |
+| Instagram: `Media download has failed` | `https://DOMEN/health` ishlayaptimi? nginx'ni yangilang: `docker compose --profile webhook up -d --build` |
 | Kalendarda sana noto'g'ri | `TZ=Asia/Tashkent` Dockerfile'da bor — `docker compose up -d --build` |
 
 **Swap qo'shish** (1 GB RAM'li server uchun):

@@ -6,6 +6,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.types import BufferedInputFile, LabeledPrice, LinkPreviewOptions
 
 import database as db
+import instagram
 from config import (
     ADMIN_GROUP_ID,
     ADMIN_USERNAME,
@@ -64,6 +65,8 @@ async def publish_item(bot: Bot, item: dict, mode: str) -> int:
             CHANNEL_ID, text, reply_markup=keyboard, link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
     await db.update_item(item["id"], status="published", publish_mode=mode, channel_msg_id=post.message_id)
+    # Instagram'ga kanaldagi rasmning o'zi ketadi (xiralashtirilgan bo'lsa — xiralashtirilgani)
+    await instagram.enqueue(bot, item["id"], post.photo[-1].file_id if post.photo else None)
     try:
         await notify_lost_owners(bot, item, post.message_id)
     except Exception as error:  # xabar yuborilmasa ham e'lon kanalda qoladi
