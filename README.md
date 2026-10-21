@@ -18,6 +18,10 @@ Narsasini yo'qotgan odam **"Narsa yo'qotdim"** bo'limida turini tanlaydi va oxir
 
 Yangi topilgan narsa kanalga chiqqanda bot uni faol qidiruvlar bilan solishtiradi (`matching.py`). Turi bir xil, viloyati mos (ikkalasida ham ko'rsatilgan bo'lsa) va yo'qotilgan kundan keyin 60 kun ichida topilgan bo'lsa, egasiga **"🙋 Bu meniki"** tugmasi bilan xabar boradi. Qidiruvlarni **"🔔 Qidiruvlarim"** bo'limida ko'rish va to'xtatish mumkin. Narsa egasiga qaytarilsa, qidiruv avtomatik yopiladi.
 
+**Hujjat raqami** (pasport, ID karta, prava; `docnumber.py`). Odam qidiruvga hujjat raqamini (AA1234567) qo'shishi mumkin. Topilgan hujjatni OCR o'qigach, raqam mos kelsa, egasiga darhol **"🎉 Hujjatingiz topilgan bo'lishi mumkin!"** xabari boradi. Bunda viloyat va sana hisobga olinmaydi, qidiruv muddat bilan yopilmaydi. Raqam bazada ochiq saqlanmaydi, faqat HMAC izi (`DOC_HASH_SECRET` kaliti bilan) va "AA•••••67" ko'rinishi saqlanadi. Foydalanuvchi yozgan xabar chatdan o'chiriladi.
+
+**Rasm** (hujjat bo'lmagan narsalar; `visual.py`). Odam narsasining rasmini qo'shishi mumkin. Rasm MobileNetV3 modeli bilan barmoq iziga aylantiriladi va topilgan narsalar rasmlari bilan solishtiriladi. Natijada mos e'lonlar ro'yxatida eng o'xshashlari tepada turadi, xabarda esa "🖼 Rasmi juda o'xshaydi" belgisi chiqadi. Rasm o'xshashligi mos kelishni o'zi hal qilmaydi, faqat tartiblaydi.
+
 ### Mening e'lonlarim (`handlers/mine.py`)
 
 **"📋 Mening e'lonlarim"** bo'limida foydalanuvchi o'zi bergan e'lonlarni va qilgan murojaatlarini holati bilan ko'radi. Raqamni bossa, batafsil karta ochiladi.
@@ -51,7 +55,7 @@ To'lovdan so'ng egasi **"✅ Narsamni oldim"**, topuvchi **"✅ Egasiga topshird
 
 - Egasi tasdiqlangandan keyin **24 soat** to'lamasa, eslatma oladi. **48 soatda** murojaat yopiladi va narsa boshqalar uchun yana ochiladi.
 - Murojaat yoki chek **3 soat** ko'rib chiqilmasa, admin guruhga umumiy eslatma boradi.
-- Muddati (60 kun) o'tgan "yo'qotdim" qidiruvlari yopiladi va egasiga xabar beriladi.
+- Muddati (60 kun) o'tgan "yo'qotdim" qidiruvlari yopiladi va egasiga xabar beriladi (hujjat raqami kiritilganlari bundan mustasno).
 - E'lon yopilishi bilan hujjatdan OCR o'qigan matn o'chiriladi. Yopilganiga **90 kun** bo'lgan e'lon va murojaatlardan telefon, karta, isbot va chek o'chiriladi, yopiq qidiruvlar butunlay o'chiriladi.
 
 Muddatlarni `.env` da o'zgartirish mumkin: `PAYMENT_REMIND_HOURS`, `PAYMENT_EXPIRE_HOURS`, `ADMIN_REMIND_HOURS`, `DATA_RETENTION_DAYS`.
@@ -100,6 +104,7 @@ Testlar haqiqiy bot kodini aiogram Dispatcher orqali ishlatadi, lekin Telegram'g
 | Fayl | Nimani tekshiradi |
 |---|---|
 | `test_flows.py` | "Yo'qotdim" e'loni, mos narsa chiqqanda xabar, hujjatni avtomatik tasdiqlash, onlayn to'lov |
+| `test_lost_extras.py` | Hujjat raqami bo'yicha aniq moslik, rasm o'xshashligi bo'yicha tartiblash |
 | `test_instagram.py` | Instagram: rasm nisbati, izoh, navbat, limit va xatolar |
 | `test_handover.py` | Narsa topshirilishini tasdiqlash, nizolar, suyunchi faqat tasdiqdan keyin |
 | `test_chat.py` | Egasi va topuvchi o'rtasidagi yozishma |
@@ -146,6 +151,8 @@ Docker, nginx va SSL bo'yicha to'liq qo'llanma: **[DEPLOY.md](DEPLOY.md)**
 - `services.py` – kanalga e'lon chiqarish va yo'qotganlarga xabar berish
 - `instagram.py` – e'lonlarni Instagram'ga joylash
 - `matching.py` – yo'qotilgan va topilgan narsalarni moslashtirish
+- `docnumber.py` – hujjat raqami: tekshirish, OCR matnidan ajratish, HMAC izi
+- `visual.py` – rasm o'xshashligi (MobileNetV3)
 - `geo.py` – lokatsiyadan manzilni aniqlash (OpenStreetMap)
 - `handlers/found.py` – narsa topgan odam uchun bo'lim
 - `handlers/claim.py` – egasi murojaati va to'lov cheki

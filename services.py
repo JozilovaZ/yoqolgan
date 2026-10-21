@@ -7,6 +7,7 @@ from aiogram.types import BufferedInputFile, LabeledPrice, LinkPreviewOptions
 
 import database as db
 import instagram
+import visual
 from config import (
     ADMIN_GROUP_ID,
     ADMIN_USERNAME,
@@ -19,6 +20,7 @@ from config import (
     PAYMENT_PROVIDER_TOKEN,
     SERVICE_FEE,
 )
+from docnumber import fingerprint, numbers_in_text
 from i18n import t, user_lang
 from images import blurred_photo
 from keyboards import channel_post_kb, dispute_kb, handover_kb, lost_match_kb, payout_kb
@@ -28,6 +30,7 @@ from utils import (
     channel_post_text,
     is_document,
     item_code,
+    lost_code,
     lost_match_text,
     money,
     safe_send,
@@ -67,8 +70,15 @@ async def publish_item(bot: Bot, item: dict, mode: str) -> int:
     await db.update_item(item["id"], status="published", publish_mode=mode, channel_msg_id=post.message_id)
     # Instagram'ga kanaldagi rasmning o'zi ketadi (xiralashtirilgan bo'lsa — xiralashtirilgani)
     await instagram.enqueue(bot, item["id"], post.photo[-1].file_id if post.photo else None)
+    # Rasm barmoq izi — "yo'qotdim" e'lonlaridagi rasmlar bilan solishtirish uchun (hujjatlarda — raqam bo'yicha)
+    if mode == "photo" and not is_document(item["category"]):
+        embedding = await visual.embed(bot, item["photo_id"])
+        if embedding:
+            await db.update_item(item["id"], embedding=embedding)
+            item = {**item, "embedding": embedding}
     try:
         await notify_lost_owners(bot, item, post.message_id)
+        await notify_document_owners(bot, item["id"])  # OCR hali tugamagan bo'lsa — tugagach verify.py chaqiradi
     except Exception as error:  # xabar yuborilmasa ham e'lon kanalda qoladi
         logger.error("Yo'qotganlarga xabar yuborilmadi: %s", error)
     return post.message_id
@@ -82,15 +92,54 @@ async def notify_lost_owners(bot: Bot, item: dict, message_id: int) -> None:
             continue
         notified.add(report["owner_id"])
         lang = await user_lang(report["owner_id"])
+        photo_level = visual.level(visual.similarity(item.get("embedding"), report["embedding"]))
         await safe_send(
             bot,
             report["owner_id"],
-            lost_match_text(item, report, lang),
+            lost_match_text(item, report, lang, photo_level=photo_level),
             reply_markup=lost_match_kb(item["id"], report["id"], post_link(message_id), lang),
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     if notified:
         logger.info("#%s: %d ta yo'qotganga xabar berildi", item["id"], len(notified))
+
+
+async def _send_document_match(bot: Bot, item: dict, report: dict) -> None:
+    """Hujjat raqami mos keldi. Har bir (qidiruv, e'lon) jufti uchun bir marta."""
+    if report["owner_id"] == item["finder_id"] or not await db.add_doc_hit(report["id"], item["id"]):
+        return
+    lang = await user_lang(report["owner_id"])
+    await safe_send(
+        bot,
+        report["owner_id"],
+        lost_match_text(item, report, lang, by_number=True),
+        reply_markup=lost_match_kb(item["id"], report["id"], post_link(item["channel_msg_id"]), lang),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+    logger.info("#%s: hujjat raqami %s qidiruviga mos keldi", item["id"], lost_code(report["id"]))
+
+
+async def notify_document_owners(bot: Bot, item_id: int) -> None:
+    """Topilgan hujjatdagi raqam (OCR) "yo'qotdim" e'lonidagi raqamga mos kelsa — egasiga darhol xabar.
+
+    Viloyat va sana hisobga olinmaydi: raqam mos kelishi o'zi yetarli. OCR tugaganda ham, e'lon kanalga
+    chiqqanda ham chaqiriladi — qaysi biri keyin bo'lsa, o'shanda xabar ketadi.
+    """
+    item = await db.get_item(item_id)
+    if not item or item["status"] != "published" or not item["ocr_text"]:
+        return
+    numbers = numbers_in_text(item["ocr_text"].split("\n"))
+    for report in await db.find_lost_reports_by_doc([fingerprint(number) for number in numbers]):
+        await _send_document_match(bot, item, report)
+
+
+async def match_report_documents(bot: Bot, report: dict) -> None:
+    """Yangi qidiruv: kanalda allaqachon turgan hujjatlar orasida shu raqamlisi bormi."""
+    if not report["doc_hash"]:
+        return
+    for item in await db.list_published_documents():
+        if report["doc_hash"] in {fingerprint(number) for number in numbers_in_text(item["ocr_text"].split("\n"))}:
+            await _send_document_match(bot, item, report)
 
 
 def post_link(message_id: int) -> str:

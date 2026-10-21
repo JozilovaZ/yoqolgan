@@ -146,13 +146,21 @@ def lost_report_text(report: dict, lang: str = "uz") -> str:
     ]
     if report["description"]:
         lines.append(f"📝 {escape(cut(report['description'], 300))}")
+    if report.get("doc_hint"):
+        lines.append(t("lost.doc_number_line", lang, hint=report["doc_hint"]))
+    if report.get("photo_id"):
+        lines.append(t("lost.photo_line", lang))
     return "\n".join(lines)
 
 
-def lost_match_text(item: dict, report: dict, lang: str = "uz") -> str:
-    """Yo'qotgan odamga: unga o'xshash narsa topilgani haqida xabar."""
+def lost_match_text(item: dict, report: dict, lang: str = "uz", by_number: bool = False,
+                    photo_level: str | None = None) -> str:
+    """Yo'qotgan odamga: unga o'xshash narsa topilgani haqida xabar.
+
+    by_number — hujjat raqami mos keldi; photo_level — rasm o'xshashligi ('high' | 'medium', visual.level).
+    """
     lines = [
-        t("match.title", lang),
+        t("match.doc_title", lang, hint=report["doc_hint"]) if by_number else t("match.title", lang),
         "",
         f"<b>{category_label(item['category'], lang)}</b> | #{item_code(item['id'])}",
         location_text(item, lang=lang),
@@ -160,6 +168,8 @@ def lost_match_text(item: dict, report: dict, lang: str = "uz") -> str:
     ]
     if item["description"]:
         lines.append(f"📝 {escape(cut(item['description'], 300))}")
+    if photo_level:
+        lines.append(t(f"match.photo_{photo_level}", lang))
     lines += ["", t("match.footer", lang, code=lost_code(report["id"]))]
     return "\n".join(lines)
 

@@ -15,6 +15,10 @@ def _chat_id(value: str) -> int | str:
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+# Yo'qotilgan hujjat raqamlari bazada shu kalit bilan shifrlanadi (HMAC). Bir marta o'rnating va o'zgartirmang:
+# o'zgarsa, saqlangan raqamlar endi mos kelmaydi. Bo'sh bo'lsa — BOT_TOKEN ishlatiladi
+DOC_HASH_SECRET = os.getenv("DOC_HASH_SECRET", "") or BOT_TOKEN
+
 # Admin guruh: yangi e'lonlar, murojaatlar va to'lov cheklari shu yerga keladi
 ADMIN_GROUP_ID = _chat_id(os.getenv("ADMIN_GROUP_ID", "0"))
 

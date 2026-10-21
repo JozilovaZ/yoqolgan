@@ -243,6 +243,35 @@ TEXTS = {
     "lost.already_stopped": "Bu qidiruv allaqachon to'xtatilgan",
     "lost.stopped_toast": "Qidiruv to'xtatildi",
     "lost.stopped": "🔕 #{code} qidiruvi to'xtatildi.",
+    "lost.q_doc_number": (
+        "➕ <b>Hujjat raqamini bilasizmi?</b> (ixtiyoriy)\n"
+        "<i>Masalan: AA1234567 — 2 ta harf va 7 ta raqam</i>\n\n"
+        "Aynan shu raqamli hujjat topilishi bilan darhol xabar beraman — viloyat va sanadan qat'i nazar.\n"
+        "🔒 Raqamning o'zi saqlanmaydi: faqat shifrlangan izi. Xabaringiz chatdan o'chiriladi."
+    ),
+    "lost.bad_doc_number": (
+        "Raqam <b>AA1234567</b> ko'rinishida bo'lishi kerak: 2 ta harf va 7 ta raqam.\n"
+        "Bilmasangiz, <b>«⏭ O'tkazib yuborish»</b> ni bosing."
+    ),
+    "lost.q_photo": (
+        "➕ <b>Narsangizning rasmi bormi?</b> (ixtiyoriy)\n"
+        "<i>Eski surati, qutisi yoki xuddi shunday narsaning internetdagi rasmi.</i>\n\n"
+        "Topilgan narsalar rasmi bilan solishtirib, eng o'xshashlarini ko'rsataman. "
+        "🔒 Rasm hech qayerda e'lon qilinmaydi."
+    ),
+    "lost.photo_required": "Rasm yuboring yoki <b>«⏭ O'tkazib yuborish»</b> ni bosing.",
+    "lost.doc_number_line": "🔢 Hujjat raqami: <b>{hint}</b>",
+    "lost.photo_line": "🖼 Rasm qo'shilgan",
+    "lost.matches_by_photo": (
+        "👀 Hozirning o'zida <b>{count}</b> ta o'xshash e'lon bor. Rasmingizga eng o'xshashlari tepada. "
+        "Narsangiz bo'lsa, ustiga bosing 👇"
+    ),
+    "match.doc_title": (
+        "🎉 <b>Hujjatingiz topilgan bo'lishi mumkin!</b>\n"
+        "Topilgan hujjatdagi raqam siz kiritgan raqamga (<b>{hint}</b>) mos keldi."
+    ),
+    "match.photo_high": "🖼 Rasmi siz yuborgan rasmga <b>juda o'xshaydi</b>",
+    "match.photo_medium": "🖼 Rasmi siz yuborgan rasmga o'xshaydi",
     "match.title": "🔔 <b>Siz qidirayotgan narsaga o'xshash narsa topildi!</b>",
     "match.footer": "Qidiruvingiz: #{code}\nNarsangiz bo'lsa, <b>«🙋 Bu meniki»</b> tugmasini bosing 👇",
 

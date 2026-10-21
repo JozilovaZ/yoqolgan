@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Hujjat raqami bo'yicha topilgan mosliklar: bir xil xabar ikki marta yuborilmasin
+CREATE TABLE IF NOT EXISTS doc_hits (
+    report_id INTEGER NOT NULL REFERENCES lost_reports(id),
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (report_id, item_id)
+);
+
 -- Bot holati (masalan, oxirgi zaxira sanasi) — qayta ishga tushganda ham saqlanadi
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -114,6 +122,14 @@ MIGRATIONS = [
     "ALTER TABLE items ADD COLUMN ig_error TEXT",
     "ALTER TABLE items ADD COLUMN ig_media_id TEXT",
     "ALTER TABLE items ADD COLUMN ig_permalink TEXT",
+    # Hujjat raqami: ochiq raqam emas, HMAC izi (docnumber.py) va "AA•••••67" ko'rinishi
+    "ALTER TABLE lost_reports ADD COLUMN doc_hash TEXT",
+    "ALTER TABLE lost_reports ADD COLUMN doc_hint TEXT",
+    "CREATE INDEX IF NOT EXISTS lost_reports_doc_hash ON lost_reports(doc_hash)",
+    # Rasm o'xshashligi (visual.py): yo'qotgan odam yuborgan rasm va rasmlarning barmoq izlari
+    "ALTER TABLE lost_reports ADD COLUMN photo_id TEXT",
+    "ALTER TABLE lost_reports ADD COLUMN embedding BLOB",
+    "ALTER TABLE items ADD COLUMN embedding BLOB",
     (
         "ALTER TABLE claims ADD COLUMN handover TEXT",
         # Bu yangilanishdan oldin yakunlangan murojaatlar topshirilgan deb hisoblanadi — suyunchisi to'xtab qolmasin
@@ -477,6 +493,31 @@ async def list_active_lost_reports(category: str) -> list[dict]:
     )
 
 
+async def find_lost_reports_by_doc(fingerprints: list[str]) -> list[dict]:
+    if not fingerprints:
+        return []
+    marks = ", ".join("?" for _ in fingerprints)
+    return await _fetchall(
+        f"SELECT * FROM lost_reports WHERE status = 'active' AND doc_hash IN ({marks}) ORDER BY id",
+        tuple(fingerprints),
+    )
+
+
+async def add_doc_hit(report_id: int, item_id: int) -> bool:
+    """True — bu moslik yangi (xabar yuborish kerak), False — avval yuborilgan."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO doc_hits (report_id, item_id) VALUES (?, ?)", (report_id, item_id)
+        )
+        await db.commit()
+        return cursor.rowcount == 1
+
+
+async def list_published_documents() -> list[dict]:
+    """OCR o'qib bo'lgan, kanalda turgan hujjatlar — yangi qidiruvni darhol solishtirish uchun."""
+    return await _fetchall("SELECT * FROM items WHERE status = 'published' AND ocr_text IS NOT NULL ORDER BY id DESC")
+
+
 async def close_owner_lost_reports(owner_id: int, category: str) -> None:
     await _execute(
         "UPDATE lost_reports SET status = 'closed' WHERE owner_id = ? AND category = ? AND status = 'active'",
@@ -516,7 +557,8 @@ async def list_stale_claims(hours: float) -> list[dict]:
 
 async def list_outdated_lost_reports(days: int) -> list[dict]:
     return await _fetchall(
-        "SELECT * FROM lost_reports WHERE status = 'active' AND lost_day <= date('now', ?) ORDER BY id",
+        "SELECT * FROM lost_reports WHERE status = 'active' AND doc_hash IS NULL AND lost_day <= date('now', ?) "
+        "ORDER BY id",
         (f"-{days} days",),
     )
 
@@ -541,6 +583,7 @@ async def purge_personal_data(days: int) -> dict:
             "DELETE FROM lost_reports WHERE status = 'closed' AND created_at <= datetime('now', ?)", period
         )
         chats = await db.execute("DELETE FROM chat_messages WHERE created_at <= datetime('now', ?)", period)
+        await db.execute("DELETE FROM doc_hits WHERE report_id NOT IN (SELECT id FROM lost_reports)")
         await db.commit()
         return {
             "items": items.rowcount,

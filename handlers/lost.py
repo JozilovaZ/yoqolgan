@@ -1,15 +1,18 @@
 """Narsa yo'qotgan odam uchun bo'lim: qidiruv va "topilsa xabar bering" e'loni."""
 from datetime import date
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 import database as db
+import visual
 from config import CATEGORIES, CHANNEL_LINK, REGIONS
+from docnumber import NUMBERED_DOCUMENTS, fingerprint, masked, normalize
 from i18n import region_label, t
 from keyboards import (
     BUTTONS,
@@ -25,7 +28,8 @@ from keyboards import (
 )
 from consent import require_terms
 from matching import is_match
-from utils import category_label, day_text, lost_code, lost_report_text
+from services import match_report_documents
+from utils import category_label, day_text, is_document, lost_code, lost_report_text
 
 from .claim import start_claim
 
@@ -41,6 +45,8 @@ class LostForm(StatesGroup):
     place = State()
     lost_date = State()
     description = State()
+    doc_number = State()  # faqat pasport, ID karta, prava
+    photo = State()  # faqat hujjat bo'lmagan narsalar
     confirm = State()
 
 
@@ -163,6 +169,55 @@ async def got_description(message: Message, state: FSMContext, lang: str):
         await message.answer(t("common.too_long_500", lang))
         return
     await state.update_data(description=description)
+    category = (await state.get_data())["category"]
+    if category in NUMBERED_DOCUMENTS:
+        await state.set_state(LostForm.doc_number)
+        await message.answer(t("lost.q_doc_number", lang), reply_markup=skip_kb(lang))
+    elif not is_document(category):
+        await state.set_state(LostForm.photo)
+        await message.answer(t("lost.q_photo", lang), reply_markup=skip_kb(lang))
+    else:
+        await show_confirm(message, state, lang)
+
+
+@router.message(LostForm.doc_number, F.text)
+async def got_doc_number(message: Message, state: FSMContext, lang: str):
+    if message.text not in BUTTONS["skip"]:
+        number = normalize(message.text)
+        if not number:
+            await message.answer(t("lost.bad_doc_number", lang))
+            return
+        # Raqamning o'zi saqlanmaydi — faqat izi va "AA•••••67" ko'rinishi
+        await state.update_data(doc_hash=fingerprint(number), doc_hint=masked(number))
+        try:
+            await message.delete()  # chatda ham ochiq turmasin
+        except TelegramAPIError:
+            pass
+    await show_confirm(message, state, lang)
+
+
+@router.message(LostForm.doc_number)
+async def doc_number_required(message: Message, lang: str):
+    await message.answer(t("lost.bad_doc_number", lang))
+
+
+@router.message(LostForm.photo, F.photo)
+async def got_photo(message: Message, state: FSMContext, lang: str):
+    await state.update_data(photo_id=message.photo[-1].file_id)
+    await show_confirm(message, state, lang)
+
+
+@router.message(LostForm.photo, F.text.in_(BUTTONS["skip"]))
+async def skip_photo(message: Message, state: FSMContext, lang: str):
+    await show_confirm(message, state, lang)
+
+
+@router.message(LostForm.photo)
+async def photo_required(message: Message, lang: str):
+    await message.answer(t("lost.photo_required", lang))
+
+
+async def show_confirm(message: Message, state: FSMContext, lang: str):
     await state.set_state(LostForm.confirm)
     data = await state.get_data()
     await message.answer(t("common.almost_ready", lang), reply_markup=ReplyKeyboardRemove())
@@ -180,12 +235,14 @@ async def lost_cancel(callback: CallbackQuery, state: FSMContext, lang: str):
 
 
 @router.callback_query(LostForm.confirm, F.data == "lostform:save")
-async def lost_save(callback: CallbackQuery, state: FSMContext, lang: str):
+async def lost_save(callback: CallbackQuery, state: FSMContext, bot: Bot, lang: str):
     data = await state.get_data()
     await state.clear()
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
     user = callback.from_user
+    photo_id = data.get("photo_id")
+    embedding = await visual.embed(bot, photo_id) if photo_id else None
 
     report_id = await db.create_lost_report(
         {
@@ -197,6 +254,10 @@ async def lost_save(callback: CallbackQuery, state: FSMContext, lang: str):
             "place": data["place"],
             "lost_day": data["lost_day"],
             "description": data["description"],
+            "doc_hash": data.get("doc_hash"),
+            "doc_hint": data.get("doc_hint"),
+            "photo_id": photo_id,
+            "embedding": embedding,
         }
     )
     report = await db.get_lost_report(report_id)
@@ -206,11 +267,18 @@ async def lost_save(callback: CallbackQuery, state: FSMContext, lang: str):
         reply_markup=main_menu(lang),
     )
 
-    # Kanalda allaqachon turgan mos e'lonlar
+    # Kanalda allaqachon turgan, raqami aynan mos hujjat
+    await match_report_documents(bot, report)
+
+    # Kanalda allaqachon turgan mos e'lonlar. Rasm yuborilgan bo'lsa — eng o'xshashlari tepada
     matches = [item for item in await db.list_published(report["category"], limit=50) if is_match(report, item)]
+    text_key = "lost.matches_now"
+    if embedding and any(item["embedding"] for item in matches):
+        matches.sort(key=lambda item: visual.similarity(embedding, item["embedding"]) or 0.0, reverse=True)
+        text_key = "lost.matches_by_photo"
     if matches:
         await callback.message.answer(
-            t("lost.matches_now", lang, count=len(matches)), reply_markup=lost_items_kb(matches[:10], lang=lang)
+            t(text_key, lang, count=len(matches)), reply_markup=lost_items_kb(matches[:10], lang=lang)
         )
 
 

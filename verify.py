@@ -16,7 +16,9 @@ from aiogram import Bot
 
 import database as db
 from config import AUTO_VERIFY_DOCUMENTS
+from docnumber import numbers_in_text
 from images import document_text
+from services import notify_document_owners
 from utils import is_document
 
 logger = logging.getLogger(__name__)
@@ -29,10 +31,6 @@ _running: dict[int, asyncio.Task] = {}
 
 # Bir harf adashsa ham (OCR yoki imlo xatosi) mos deb hisoblaymiz
 NAME_SIMILARITY = 0.8
-# Pasport / ID karta / prava raqami: 2 harfli seriya + 7 raqam (AA1234567). MRZ'da undan keyin
-# bitta nazorat raqami turadi (AA12345671UZB...). Oldidan harf turmasligi kerak:
-# MRZ'dagi "UZB9005123" (tug'ilgan sana) hujjat raqami emas
-DOCUMENT_NUMBER_RE = re.compile(r"(?<![A-Z])[A-Z]{2}\s?([0-9OIDL|]{7})(?=\d?(?:\D|$))")
 CARD_NUMBER_RE = re.compile(r"(?<!\d)\d{16}(?!\d)")
 
 CYRILLIC = {
@@ -41,9 +39,6 @@ CYRILLIC = {
     "у": "u", "ф": "f", "х": "x", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "", "ы": "i", "ь": "",
     "э": "e", "ю": "yu", "я": "ya", "ў": "o", "қ": "q", "ғ": "g", "ҳ": "h",
 }
-
-# Raqamlar orasida OCR adashtiradigan harflar
-DIGIT_LOOKALIKES = str.maketrans({"O": "0", "D": "0", "I": "1", "L": "1", "|": "1"})
 
 
 @dataclass
@@ -72,10 +67,7 @@ def _document_numbers(lines: list[str]) -> list[str]:
     numbers = []
     for line in lines:
         line = line.upper()
-        for digits in DOCUMENT_NUMBER_RE.findall(line):
-            digits = digits.translate(DIGIT_LOOKALIKES)
-            if digits.isdigit():
-                numbers.append(digits)
+        numbers += [number[2:] for number in numbers_in_text([line])]  # seriyasiz, faqat 7 ta raqam
         numbers += CARD_NUMBER_RE.findall(re.sub(r"(?<=\d)[\s-]+(?=\d)", "", line))
     return numbers
 
@@ -104,6 +96,10 @@ async def _read_and_save(bot: Bot, item: dict) -> list[str]:
     lines = await document_text(bot, item["photo_id"])
     await db.update_item(item["id"], ocr_text="\n".join(lines))
     logger.info("Hujjat o'qildi (#%s): %.1f s", item["id"], time.monotonic() - started)
+    try:
+        await notify_document_owners(bot, item["id"])  # raqami mos "yo'qotdim" e'lonlari
+    except Exception as error:
+        logger.error("Hujjat egalariga xabar yuborilmadi (#%s): %s", item["id"], error)
     return lines
 
 

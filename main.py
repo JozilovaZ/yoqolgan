@@ -11,6 +11,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 import database as db
 import images
 import instagram
+import visual
 from config import (
     ADMIN_GROUP_ID,
     BOT_TOKEN,
@@ -130,6 +131,10 @@ async def main() -> None:
     # OCR modelini fonda oldindan yuklab qo'yamiz (birinchi hujjat tez ishlashi uchun)
     preload = asyncio.create_task(asyncio.to_thread(images.get_reader))
     preload.add_done_callback(lambda task: task.exception() and logging.warning("OCR yuklanmadi: %s", task.exception()))
+    preload_visual = asyncio.create_task(asyncio.to_thread(visual.get_model))  # rasm o'xshashligi modeli
+    preload_visual.add_done_callback(
+        lambda task: task.exception() and logging.warning("Rasm modeli yuklanmadi: %s", task.exception())
+    )
 
     await safe_send(bot, ADMIN_GROUP_ID, "🟢 Bot ishga tushdi")
 

@@ -35,6 +35,8 @@ async def test_lost_report_shows_existing_matches(tg):
     await tg.send("Chilonzor", user_id=OWNER)
     await tg.press(f"day:{date.today().isoformat()}", user_id=OWNER)
     await tg.send("qora iPhone", user_id=OWNER)
+    assert "rasmi bormi" in tg.last_text()
+    await tg.send("⏭ O'tkazib yuborish", user_id=OWNER)
     await tg.press("lostform:save", user_id=OWNER)
 
     reports = await db.list_user_lost_reports(OWNER)

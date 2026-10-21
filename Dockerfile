@@ -8,7 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Tashkent \
     DB_PATH=/app/data/bot.db \
     # EasyOCR modellari shu yerda saqlanadi (image ichiga oldindan yuklanadi)
-    EASYOCR_MODULE_PATH=/opt/easyocr
+    EASYOCR_MODULE_PATH=/opt/easyocr \
+    # Rasm o'xshashligi modeli (visual.py) ham image ichiga oldindan yuklanadi
+    TORCH_HOME=/opt/torch
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata libglib2.0-0 libgl1 libgomp1 \
@@ -24,6 +26,7 @@ RUN pip install -r requirements.txt
 
 # OCR modelini build vaqtida yuklab qo'yamiz — konteyner har safar internetdan yuklamasligi uchun
 RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
+RUN python -c "from torchvision.models import MobileNet_V3_Large_Weights as W, mobilenet_v3_large as m; m(weights=W.IMAGENET1K_V2)"
 
 COPY . .
 
